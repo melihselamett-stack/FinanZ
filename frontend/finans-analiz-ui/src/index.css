@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #0a0f1a;
+  --color-surface: #111827;
+  --color-surface-light: #1f2937;
+  --color-border: #374151;
+  --color-text: #f9fafb;
+  --color-text-muted: #9ca3af;
+}
+
+body {
+  margin: 0;
+  font-family: 'Outfit', system-ui, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg 
+           hover:from-green-600 hover:to-green-700 transition-all duration-200 
+           shadow-lg shadow-green-500/25 hover:shadow-green-500/40;
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-2 bg-gray-700 border border-gray-600 text-white font-medium rounded-lg
+           hover:bg-gray-600 transition-all duration-200;
+  }
+  
+  .input-field {
+    @apply w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white
+           placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 
+           focus:border-transparent transition-all duration-200;
+  }
+  
+  .card {
+    @apply bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-xl p-4;
+  }
+  
+  .glass {
+    @apply bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl;
+  }
+}
