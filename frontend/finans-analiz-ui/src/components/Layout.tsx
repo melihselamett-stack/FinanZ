@@ -16,6 +16,7 @@ export default function Layout() {
     { to: '/account-plan', label: 'Hesap Planı', icon: '📋' },
     { to: '/mizan', label: 'Mizan Yükle', icon: '📁' },
     { to: '/consolidated-mizan', label: 'Konsolide Mizan', icon: '📈' },
+    { to: '/bilanco-raporlari', label: 'Bilanço Raporları', icon: '📑' },
   ]
 
   return (

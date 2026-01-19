@@ -7,6 +7,7 @@ import CompanySettings from './pages/CompanySettings'
 import AccountPlan from './pages/AccountPlan'
 import MizanUpload from './pages/MizanUpload'
 import ConsolidatedMizan from './pages/ConsolidatedMizan'
+import BilancoRaporlari from './pages/BilancoRaporlari'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -38,6 +39,7 @@ function App() {
         <Route path="account-plan" element={<AccountPlan />} />
         <Route path="mizan" element={<MizanUpload />} />
         <Route path="consolidated-mizan" element={<ConsolidatedMizan />} />
+        <Route path="bilanco-raporlari" element={<BilancoRaporlari />} />
       </Route>
     </Routes>
   )

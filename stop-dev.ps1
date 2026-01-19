@@ -15,9 +15,9 @@ if ($backendProcesses) {
     foreach ($proc in $backendProcesses) {
         try {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            Write-Host "  ✓ Process durduruldu: $($proc.ProcessName) (ID: $($proc.Id))" -ForegroundColor Green
+            Write-Host "  Process durduruldu: $($proc.ProcessName) (ID: $($proc.Id))" -ForegroundColor Green
         } catch {
-            Write-Host "  ✗ Process durdurulamadı: $($proc.ProcessName) (ID: $($proc.Id))" -ForegroundColor Red
+            Write-Host "  Process durdurulamadı: $($proc.ProcessName) (ID: $($proc.Id))" -ForegroundColor Red
         }
     }
 } else {
@@ -36,9 +36,9 @@ if ($frontendProcesses) {
     foreach ($proc in $frontendProcesses) {
         try {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            Write-Host "  ✓ Process durduruldu: $($proc.ProcessName) (ID: $($proc.Id))" -ForegroundColor Green
+            Write-Host "  Process durduruldu: $($proc.ProcessName) (ID: $($proc.Id))" -ForegroundColor Green
         } catch {
-            Write-Host "  ✗ Process durdurulamadı: $($proc.ProcessName) (ID: $($proc.Id))" -ForegroundColor Red
+            Write-Host "  Process durdurulamadı: $($proc.ProcessName) (ID: $($proc.Id))" -ForegroundColor Red
         }
     }
 } else {

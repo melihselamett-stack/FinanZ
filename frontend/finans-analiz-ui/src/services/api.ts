@@ -195,5 +195,28 @@ export const mizanApi = {
     }>(`/mizan/company/${companyId}/consolidated`),
 }
 
+export interface BilancoItem {
+  Name: string
+  AccountCode?: string
+  IsCategory?: boolean
+  IsTotal?: boolean
+  Values: {
+    [key: string]: number
+    Total: number
+  }
+}
+
+export interface BilancoData {
+  year: number
+  periods: Array<{ year: number; month: number }>
+  varliklar: BilancoItem[]
+  kaynaklar: BilancoItem[]
+}
+
+export const bilancoApi = {
+  getBilanco: (companyId: number, year?: number) =>
+    api.get<BilancoData>(`/bilanco/company/${companyId}`, { params: year ? { year } : {} }),
+}
+
 export default api
 

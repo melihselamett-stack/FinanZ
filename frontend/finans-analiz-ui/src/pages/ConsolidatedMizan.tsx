@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { companyApi, mizanApi, Company } from '../services/api'
+import * as XLSX from 'xlsx'
 
 interface ConsolidatedData {
   periods: Array<{ year: number; month: number }>
@@ -147,6 +148,103 @@ export default function ConsolidatedMizan() {
     setFilters(prev => ({ ...prev, [key]: value }))
   }
 
+  const exportToExcel = () => {
+    if (!data || !data.accounts || data.accounts.length === 0) {
+      setError('Export edilecek veri bulunamadı')
+      return
+    }
+
+    // Excel için veri hazırla
+    const excelData: any[] = []
+    
+    // Başlık satırı
+    const headers = [
+      'Hesap Kodu',
+      'Hesap Adı',
+      'Seviye',
+      'Atama',
+      getPropertyLabel(0),
+      getPropertyLabel(1),
+      getPropertyLabel(2),
+      getPropertyLabel(3),
+      getPropertyLabel(4)
+    ]
+    
+    // Tarih kolonları ekle
+    data.periods.forEach(period => {
+      headers.push(`${months[period.month - 1]} ${period.year}`)
+    })
+    
+    excelData.push(headers)
+
+    // Veri satırları
+    filteredAccounts.forEach(account => {
+      const row: any[] = [
+        account.accountCode,
+        account.accountName,
+        `L${account.level}`,
+        account.assignedPropertyValue || 'Oto',
+        account.property1 || '',
+        account.property2 || '',
+        account.property3 || '',
+        account.property4 || '',
+        account.property5 || ''
+      ]
+
+      // Her dönem için bakiye ekle
+      data.periods.forEach(period => {
+        const balance = getBalanceForPeriod(account, period)
+        row.push(balance)
+      })
+
+      excelData.push(row)
+    })
+
+    // Worksheet oluştur
+    const ws = XLSX.utils.aoa_to_sheet(excelData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Konsolide Mizan')
+
+    // Kolon genişliklerini ayarla
+    const colWidths = [
+      { wch: 15 }, // Hesap Kodu
+      { wch: 30 }, // Hesap Adı
+      { wch: 8 },  // Seviye
+      { wch: 12 }, // Atama
+      { wch: 20 }, // Özellik 1
+      { wch: 20 }, // Özellik 2
+      { wch: 20 }, // Özellik 3
+      { wch: 20 }, // Özellik 4
+      { wch: 20 }  // Özellik 5
+    ]
+    
+    // Tarih kolonları için genişlik ekle
+    data.periods.forEach(() => {
+      colWidths.push({ wch: 15 })
+    })
+    
+    ws['!cols'] = colWidths
+
+    // Başlık satırını formatla
+    const headerRange = XLSX.utils.decode_range(ws['!ref'] || 'A1')
+    for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col })
+      if (!ws[cellAddress]) continue
+      ws[cellAddress].s = {
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '4472C4' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      }
+    }
+
+    // Dosya adı oluştur
+    const companyName = selectedCompany?.companyName || 'KonsolideMizan'
+    const fileName = `${companyName}_KonsolideMizan_${new Date().toISOString().split('T')[0]}.xlsx`
+
+    // Dosyayı indir
+    XLSX.writeFile(wb, fileName)
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -187,6 +285,14 @@ export default function ConsolidatedMizan() {
           >
             🔄 Yenile
           </button>
+          {data && data.accounts && data.accounts.length > 0 && (
+            <button
+              onClick={exportToExcel}
+              className="btn-primary"
+            >
+              📥 Excel'e Aktar
+            </button>
+          )}
         </div>
       </div>
 
