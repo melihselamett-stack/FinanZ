@@ -100,6 +100,171 @@ public class MizanController : ControllerBase
         return Ok(balances);
     }
 
+    [HttpGet("company/{companyId}/consolidated")]
+    public async Task<ActionResult<object>> GetConsolidatedMizan(int companyId)
+    {
+        if (!await UserOwnsCompany(companyId))
+            return Forbid();
+
+        // Tüm dönemleri getir
+        var periods = await _context.MonthlyBalances
+            .Where(m => m.CompanyId == companyId)
+            .Select(m => new { m.Year, m.Month })
+            .Distinct()
+            .OrderBy(p => p.Year)
+            .ThenBy(p => p.Month)
+            .ToListAsync();
+
+        if (!periods.Any())
+        {
+            return Ok(new
+            {
+                Periods = new List<object>(),
+                Accounts = new List<object>()
+            });
+        }
+
+        // Tüm hesapları getir (hesap planından veya mizan verilerinden)
+        // Önce hesap planından dene, yoksa mizan verilerinden account bilgilerini al
+        var accountsFromPlanRaw = await _context.AccountPlans
+            .Where(a => a.CompanyId == companyId)
+            .OrderBy(a => a.AccountCode)
+            .Select(a => new
+            {
+                a.Id,
+                a.AccountCode,
+                a.AccountName,
+                a.Property1,
+                a.Property2,
+                a.Property3,
+                a.Property4,
+                a.Property5,
+                a.IsLeaf,
+                a.AssignedPropertyIndex,
+                a.AssignedPropertyValue,
+                a.CostCenter
+            })
+            .ToListAsync();
+
+        // Memory'de Level hesapla
+        var accountsFromPlan = accountsFromPlanRaw.Select(a => new
+        {
+            a.Id,
+            a.AccountCode,
+            a.AccountName,
+            Level = a.AccountCode.Split('.').Length,
+            a.Property1,
+            a.Property2,
+            a.Property3,
+            a.Property4,
+            a.Property5,
+            a.IsLeaf,
+            a.AssignedPropertyIndex,
+            a.AssignedPropertyValue,
+            a.CostCenter
+        }).ToList();
+
+        // Eğer hesap planı boşsa, mizan verilerinden account bilgilerini çek
+        var accounts = accountsFromPlan;
+        if (!accounts.Any())
+        {
+            var accountsFromBalancesRaw = await _context.MonthlyBalances
+                .Include(m => m.AccountPlan)
+                .Where(m => m.CompanyId == companyId && m.AccountPlan != null)
+                .Select(m => new
+                {
+                    m.AccountPlan!.Id,
+                    m.AccountPlan.AccountCode,
+                    m.AccountPlan.AccountName,
+                    m.AccountPlan.Property1,
+                    m.AccountPlan.Property2,
+                    m.AccountPlan.Property3,
+                    m.AccountPlan.Property4,
+                    m.AccountPlan.Property5,
+                    m.AccountPlan.IsLeaf,
+                    m.AccountPlan.AssignedPropertyIndex,
+                    m.AccountPlan.AssignedPropertyValue,
+                    m.AccountPlan.CostCenter
+                })
+                .Distinct()
+                .OrderBy(a => a.AccountCode)
+                .ToListAsync();
+            
+            // Memory'de Level hesapla
+            accounts = accountsFromBalancesRaw.Select(a => new
+            {
+                a.Id,
+                a.AccountCode,
+                a.AccountName,
+                Level = a.AccountCode.Split('.').Length,
+                a.Property1,
+                a.Property2,
+                a.Property3,
+                a.Property4,
+                a.Property5,
+                a.IsLeaf,
+                a.AssignedPropertyIndex,
+                a.AssignedPropertyValue,
+                a.CostCenter
+            }).ToList();
+        }
+
+        // Her hesap için tüm dönemlerdeki bakiyeleri getir
+        var balancesByAccount = await _context.MonthlyBalances
+            .Include(m => m.AccountPlan)
+            .Where(m => m.CompanyId == companyId)
+            .GroupBy(m => m.AccountPlanId)
+            .Select(g => new
+            {
+                AccountPlanId = g.Key,
+                Balances = g.Select(b => new
+                {
+                    b.Year,
+                    b.Month,
+                    b.DebitBalance,
+                    b.CreditBalance
+                }).ToList()
+            })
+            .ToListAsync();
+
+        // Sonuçları birleştir
+        var result = new
+        {
+            Periods = periods,
+            Accounts = accounts.Select(a => new
+            {
+                a.Id,
+                a.AccountCode,
+                a.AccountName,
+                a.Level,
+                a.Property1,
+                a.Property2,
+                a.Property3,
+                a.Property4,
+                a.Property5,
+                a.IsLeaf,
+                a.AssignedPropertyIndex,
+                a.AssignedPropertyValue,
+                a.CostCenter,
+                Balances = balancesByAccount
+                    .Where(b => b.AccountPlanId == a.Id)
+                    .SelectMany(b => b.Balances)
+                    .Select(b => new
+                    {
+                        PeriodKey = $"{b.Year}-{b.Month}",
+                        b.Year,
+                        b.Month,
+                        b.DebitBalance,
+                        b.CreditBalance,
+                        NetBalance = b.DebitBalance - b.CreditBalance
+                    })
+                    .ToList()
+            }).ToList()
+        };
+
+        return Ok(result);
+    }
+
     [HttpDelete("company/{companyId}/period")]
     public async Task<IActionResult> DeletePeriod(int companyId, [FromQuery] int year, [FromQuery] int month)
     {

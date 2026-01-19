@@ -95,6 +95,12 @@ export const authApi = {
   
   googleLogin: (idToken: string) =>
     api.post<AuthResponse>('/auth/google', { idToken }),
+  
+  forgotPassword: (email: string, newPassword: string) =>
+    api.post<{ success: boolean; message: string }>('/auth/forgot-password', { email, newPassword }),
+  
+  checkEmail: (email: string) =>
+    api.post<{ exists: boolean; email?: string; fullName?: string }>('/auth/check-email', { email }),
 }
 
 export const companyApi = {
@@ -159,6 +165,34 @@ export const mizanApi = {
   
   deletePeriod: (companyId: number, year: number, month: number) =>
     api.delete(`/mizan/company/${companyId}/period`, { params: { year, month } }),
+  
+  getConsolidated: (companyId: number) =>
+    api.get<{
+      periods: Array<{ year: number; month: number }>
+      accounts: Array<{
+        id: number
+        accountCode: string
+        accountName: string
+        level: number
+        property1?: string
+        property2?: string
+        property3?: string
+        property4?: string
+        property5?: string
+        isLeaf: boolean
+        assignedPropertyIndex?: number
+        assignedPropertyValue?: string
+        costCenter?: string
+        balances: Array<{
+          periodKey: string
+          year: number
+          month: number
+          debitBalance: number
+          creditBalance: number
+          netBalance: number
+        }>
+      }>
+    }>(`/mizan/company/${companyId}/consolidated`),
 }
 
 export default api

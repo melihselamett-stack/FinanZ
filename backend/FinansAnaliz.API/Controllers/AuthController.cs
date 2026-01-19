@@ -169,5 +169,49 @@ public class AuthController : ControllerBase
             return Unauthorized(new AuthResponse { Success = false, Message = "Geçersiz Google token" });
         }
     }
+
+    [HttpPost("forgot-password")]
+    public async Task<ActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null)
+        {
+            // Güvenlik için kullanıcı bulunamadı mesajı vermiyoruz
+            return Ok(new { Success = true, Message = "Eğer bu email adresi kayıtlıysa, şifre sıfırlama bağlantısı gönderildi" });
+        }
+
+        // Şifre sıfırlama token'ı oluştur
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        
+        // Yeni şifre ile sıfırla
+        var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
+        
+        if (!result.Succeeded)
+        {
+            return BadRequest(new AuthResponse 
+            { 
+                Success = false, 
+                Message = string.Join(", ", result.Errors.Select(e => e.Description)) 
+            });
+        }
+
+        return Ok(new { Success = true, Message = "Şifreniz başarıyla sıfırlandı" });
+    }
+
+    [HttpPost("check-email")]
+    public async Task<ActionResult> CheckEmail([FromBody] CheckEmailRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null)
+        {
+            return Ok(new { Exists = false });
+        }
+
+        return Ok(new { 
+            Exists = true,
+            Email = user.Email,
+            FullName = user.FullName
+        });
+    }
 }
 

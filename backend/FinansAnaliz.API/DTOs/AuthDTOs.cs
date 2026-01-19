@@ -34,3 +34,14 @@ public class UserInfo
     public bool HasSubscription { get; set; }
 }
 
+public class ForgotPasswordRequest
+{
+    public string Email { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
+}
+
+public class CheckEmailRequest
+{
+    public string Email { get; set; } = string.Empty;
+}
+
