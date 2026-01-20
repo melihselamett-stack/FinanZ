@@ -77,31 +77,37 @@ public class BilancoController : ControllerBase
         // Tuple list'e çevir
         var allPeriods = allPeriodsRaw.Select(p => (p.Year, p.Month)).ToList();
 
-        // VARLIKLAR bölümü - Yüklenen mizan verilerinden hesapla
+        // VARLIKLAR bölümü
         var varliklarList = new List<object>();
         
-        // DURAN VARLIKLAR (2.x.x hesap kodları)
-        var duranVarliklar = await GetBilancoSection(companyId, year.Value, allPeriods, new[] { "2" });
+        // DURAN VARLIKLAR başlığı
+        varliklarList.Add(new { Name = "DURAN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        
+        // DURAN VARLIKLAR alt kalemleri (L1 kodlarına göre grupla)
+        var duranVarliklar = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "2" });
+        foreach (var item in duranVarliklar)
+        {
+            varliklarList.Add(item);
+        }
         if (duranVarliklar.Count > 0)
         {
-            foreach (var item in duranVarliklar)
-            {
-                varliklarList.Add(item);
-            }
             var duranToplam = CalculateSectionTotal(duranVarliklar.Cast<object>().ToList(), allPeriods);
-            varliklarList.Add(new { Name = "DURAN VARLIKLAR", IsCategory = true, Values = duranToplam });
+            varliklarList.Add(new { Name = "DURAN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = duranToplam });
         }
 
-        // DÖNEN VARLIKLAR (1.x.x hesap kodları)
-        var donenVarliklar = await GetBilancoSection(companyId, year.Value, allPeriods, new[] { "1" });
+        // DÖNEN VARLIKLAR başlığı
+        varliklarList.Add(new { Name = "DÖNEN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        
+        // DÖNEN VARLIKLAR alt kalemleri (L1 kodlarına göre grupla)
+        var donenVarliklar = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "1" });
+        foreach (var item in donenVarliklar)
+        {
+            varliklarList.Add(item);
+        }
         if (donenVarliklar.Count > 0)
         {
-            foreach (var item in donenVarliklar)
-            {
-                varliklarList.Add(item);
-            }
             var donenToplam = CalculateSectionTotal(donenVarliklar.Cast<object>().ToList(), allPeriods);
-            varliklarList.Add(new { Name = "DÖNEN VARLIKLAR", IsCategory = true, Values = donenToplam });
+            varliklarList.Add(new { Name = "DÖNEN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = donenToplam });
         }
 
         // TOPLAM VARLIKLAR
@@ -111,46 +117,65 @@ public class BilancoController : ControllerBase
                 varliklarList.Where(i => !IsCategoryOrTotalRow(i)).ToList(), 
                 allPeriods
             );
-            varliklarList.Add(new { Name = "TOPLAM VARLIKLAR", IsTotal = true, Values = toplamVarliklar });
+            varliklarList.Add(new { Name = "TOPLAM VARLIKLAR", IsTotal = true, NotCode = (string?)null, Values = toplamVarliklar });
         }
 
         // KAYNAKLAR bölümü
         var kaynaklarList = new List<object>();
 
-        // ÖZKAYNAKLAR (5.x.x hesap kodları)
-        var ozkaynaklar = await GetBilancoSection(companyId, year.Value, allPeriods, new[] { "5" });
+        // ÖZKAYNAKLAR başlığı
+        kaynaklarList.Add(new { Name = "ÖZKAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        
+        // ÖZKAYNAKLAR alt kalemleri (L1 kodlarına göre grupla)
+        var ozkaynaklar = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "5" });
+        foreach (var item in ozkaynaklar)
+        {
+            kaynaklarList.Add(item);
+        }
         if (ozkaynaklar.Count > 0)
         {
-            foreach (var item in ozkaynaklar)
-            {
-                kaynaklarList.Add(item);
-            }
             var ozkaynakToplam = CalculateSectionTotal(ozkaynaklar.Cast<object>().ToList(), allPeriods);
-            kaynaklarList.Add(new { Name = "ÖZKAYNAKLAR", IsCategory = true, Values = ozkaynakToplam });
+            kaynaklarList.Add(new { Name = "ÖZKAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = ozkaynakToplam });
         }
 
-        // UZUN VADELİ KAYNAKLAR (4.x.x hesap kodları)
-        var uzunVadeli = await GetBilancoSection(companyId, year.Value, allPeriods, new[] { "4" });
+        // UZUN VADELİ KAYNAKLAR başlığı
+        kaynaklarList.Add(new { Name = "UZUN VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        
+        // UZUN VADELİ KAYNAKLAR alt kalemleri (L1 kodlarına göre grupla)
+        var uzunVadeli = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "4" });
+        foreach (var item in uzunVadeli)
+        {
+            kaynaklarList.Add(item);
+        }
         if (uzunVadeli.Count > 0)
         {
-            foreach (var item in uzunVadeli)
-            {
-                kaynaklarList.Add(item);
-            }
             var uzunVadeliToplam = CalculateSectionTotal(uzunVadeli.Cast<object>().ToList(), allPeriods);
-            kaynaklarList.Add(new { Name = "UZUN VADELİ KAYNAKLAR", IsCategory = true, Values = uzunVadeliToplam });
+            kaynaklarList.Add(new { Name = "UZUN VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = uzunVadeliToplam });
         }
 
-        // KISA VADELİ YÜKÜMLÜLÜKLER (3.x.x hesap kodları)
-        var kisaVadeli = await GetBilancoSection(companyId, year.Value, allPeriods, new[] { "3" });
+        // CURRENT LIABILITIES başlığı
+        kaynaklarList.Add(new { Name = "CURRENT LIABILITIES", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        
+        // CURRENT LIABILITIES alt kalemleri (L1 kodlarına göre grupla)
+        var kisaVadeli = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "3" });
+        foreach (var item in kisaVadeli)
+        {
+            kaynaklarList.Add(item);
+        }
         if (kisaVadeli.Count > 0)
         {
-            foreach (var item in kisaVadeli)
-            {
-                kaynaklarList.Add(item);
-            }
             var kisaVadeliToplam = CalculateSectionTotal(kisaVadeli.Cast<object>().ToList(), allPeriods);
-            kaynaklarList.Add(new { Name = "KISA VADELİ YÜKÜMLÜLÜKLER", IsCategory = true, Values = kisaVadeliToplam });
+            kaynaklarList.Add(new { Name = "CURRENT LIABILITIES", IsCategory = true, NotCode = (string?)null, Values = kisaVadeliToplam });
+        }
+
+        // TOPLAM YÜKÜMLÜLÜKLER
+        if (kaynaklarList.Count > 0)
+        {
+            var toplamYukumlulukler = CalculateSectionTotal(
+                kaynaklarList.Where(i => !IsCategoryOrTotalRow(i)).ToList(), 
+                allPeriods
+            );
+            kaynaklarList.Add(new { Name = "TOPLAM YÜKÜMLÜLÜKLER", IsTotal = true, NotCode = (string?)null, Values = toplamYukumlulukler });
         }
 
         // TOPLAM KAYNAKLAR
@@ -160,7 +185,7 @@ public class BilancoController : ControllerBase
                 kaynaklarList.Where(i => !IsCategoryOrTotalRow(i)).ToList(), 
                 allPeriods
             );
-            kaynaklarList.Add(new { Name = "TOPLAM KAYNAKLAR", IsTotal = true, Values = toplamKaynaklar });
+            kaynaklarList.Add(new { Name = "TOPLAM KAYNAKLAR", IsTotal = true, NotCode = (string?)null, Values = toplamKaynaklar });
         }
 
         return Ok(new
@@ -172,7 +197,102 @@ public class BilancoController : ControllerBase
         });
     }
 
-    private async Task<List<Dictionary<string, object>>> GetBilancoSection(
+    [HttpGet("company/{companyId}/not/{notCode}/details")]
+    public async Task<ActionResult<object>> GetNotCodeDetails(int companyId, string notCode, [FromQuery] int? year)
+    {
+        if (!await UserOwnsCompany(companyId))
+            return Forbid();
+
+        // Eğer yıl belirtilmemişse, en son yılı kullan
+        if (!year.HasValue)
+        {
+            var lastYear = await _context.MonthlyBalances
+                .Where(m => m.CompanyId == companyId)
+                .OrderByDescending(m => m.Year)
+                .Select(m => m.Year)
+                .FirstOrDefaultAsync();
+
+            if (lastYear == 0)
+            {
+                return Ok(new
+                {
+                    NotCode = notCode,
+                    Year = 0,
+                    Periods = new List<object>(),
+                    Accounts = new List<object>()
+                });
+            }
+
+            year = lastYear;
+        }
+
+        // Tüm dönemleri getir
+        var allPeriodsRaw = await _context.MonthlyBalances
+            .Where(m => m.CompanyId == companyId && m.Year == year.Value)
+            .Select(m => new { m.Year, m.Month })
+            .Distinct()
+            .OrderBy(p => p.Month)
+            .ToListAsync();
+
+        // NOT koduna göre alt hesapları getir (sadece leaf hesaplar)
+        var accountsWithBalances = await _context.MonthlyBalances
+            .Include(m => m.AccountPlan)
+            .Where(m => m.CompanyId == companyId && 
+                       m.Year == year.Value &&
+                       m.AccountPlan != null &&
+                       m.AccountPlan.IsLeaf == true)
+            .ToListAsync();
+
+        // NOT koduna göre filtrele (hesap kodunun ilk iki hanesi)
+        var filteredAccounts = accountsWithBalances
+            .Where(m =>
+            {
+                var codeParts = m.AccountPlan!.AccountCode.Split('.');
+                var firstPart = codeParts.Length > 0 ? codeParts[0] : m.AccountPlan.AccountCode;
+                var l1Code = firstPart.Length >= 2 ? firstPart.Substring(0, 2) : firstPart;
+                return l1Code == notCode;
+            })
+            .GroupBy(m => new { m.AccountPlanId, m.AccountPlan!.AccountCode, m.AccountPlan.AccountName })
+            .Select(g => new
+            {
+                AccountCode = g.Key.AccountCode,
+                AccountName = g.Key.AccountName,
+                Balances = g.Select(b => new
+                {
+                    b.Month,
+                    b.DebitBalance,
+                    b.CreditBalance,
+                    NetBalance = b.DebitBalance - b.CreditBalance
+                }).ToList()
+            })
+            .OrderBy(a => a.AccountCode)
+            .ToList();
+
+        var result = filteredAccounts.Select(a => new
+        {
+            a.AccountCode,
+            a.AccountName,
+            Values = allPeriodsRaw.ToDictionary(
+                p => $"{p.Month}",
+                p =>
+                {
+                    var balance = a.Balances.FirstOrDefault(b => b.Month == p.Month);
+                    return balance != null ? balance.NetBalance : 0m;
+                }
+            ),
+            Total = a.Balances.Sum(b => b.NetBalance)
+        }).ToList();
+
+        return Ok(new
+        {
+            NotCode = notCode,
+            Year = year.Value,
+            Periods = allPeriodsRaw.Select(p => new { p.Year, p.Month }).ToList(),
+            Accounts = result
+        });
+    }
+
+    private async Task<List<Dictionary<string, object>>> GetBilancoSectionByL1(
         int companyId, 
         int year, 
         List<(int Year, int Month)> periods, 
@@ -180,12 +300,13 @@ public class BilancoController : ControllerBase
     {
         var items = new List<Dictionary<string, object>>();
 
-        // Yüklenen mizan verilerinden hesapları getir
+        // Yüklenen mizan verilerinden sadece leaf (yaprak) hesapları getir
         var accountsWithBalances = await _context.MonthlyBalances
             .Include(m => m.AccountPlan)
             .Where(m => m.CompanyId == companyId && 
                        m.Year == year &&
                        m.AccountPlan != null &&
+                       m.AccountPlan.IsLeaf == true && // Sadece leaf hesaplar
                        codePrefixes.Any(prefix => m.AccountPlan!.AccountCode.StartsWith(prefix)))
             .GroupBy(m => new { m.AccountPlanId, m.AccountPlan!.AccountCode, m.AccountPlan.AccountName })
             .Select(g => new
@@ -202,38 +323,196 @@ public class BilancoController : ControllerBase
             })
             .ToListAsync();
 
-        foreach (var accountData in accountsWithBalances)
+        // L1 kodlarına göre grupla (hesap kodunun ilk iki hanesi)
+        var l1Groups = accountsWithBalances
+            .GroupBy(a => 
+            {
+                // Önce nokta ile ayrılmış formatı kontrol et (örn: "22.0.0")
+                var codeParts = a.AccountCode.Split('.');
+                if (codeParts.Length > 0 && codeParts[0].Length >= 2)
+                {
+                    return codeParts[0].Substring(0, 2);
+                }
+                // Nokta yoksa, direkt hesap kodunun ilk iki hanesini al (örn: "220" -> "22")
+                if (a.AccountCode.Length >= 2)
+                {
+                    return a.AccountCode.Substring(0, 2);
+                }
+                return a.AccountCode;
+            })
+            .ToList();
+
+        foreach (var l1Group in l1Groups.OrderBy(g => g.Key))
         {
-            var values = new Dictionary<string, decimal>();
-            decimal total = 0;
-
-            // Her dönem için bakiye hesapla
-            foreach (var (periodYear, periodMonth) in periods)
+            var l1Code = l1Group.Key;
+            var rowNames = GetRowNamesByL1Code(l1Code, codePrefixes[0], l1Group.Select(a => a.AccountCode).ToList());
+            
+            foreach (var rowInfo in rowNames)
             {
-                var balance = accountData.Balances
-                    .Where(b => b.Month == periodMonth)
-                    .Select(b => b.DebitBalance - b.CreditBalance)
-                    .FirstOrDefault();
+                var rowName = rowInfo.Name;
+                var notCode = rowInfo.NotCode;
+                var accountCodes = rowInfo.AccountCodes;
 
-                var periodKey = $"{periodMonth}";
-                values[periodKey] = balance;
-                total += balance;
+                var values = new Dictionary<string, decimal>();
+                decimal total = 0;
+
+                // Her dönem için bakiye hesapla
+                foreach (var (periodYear, periodMonth) in periods)
+                {
+                    decimal periodTotal = 0;
+                    foreach (var accountData in l1Group.Where(a => accountCodes.Contains(a.AccountCode)))
+                    {
+                        // Aynı hesap için aynı ay için tüm bakiyeleri topla (eğer birden fazla kayıt varsa)
+                        var balance = accountData.Balances
+                            .Where(b => b.Month == periodMonth)
+                            .Sum(b => b.DebitBalance - b.CreditBalance);
+                        periodTotal += balance;
+                    }
+
+                    var periodKey = $"{periodMonth}";
+                    values[periodKey] = periodTotal;
+                    total += periodTotal;
+                }
+
+                values["Total"] = total;
+
+                items.Add(new Dictionary<string, object>
+                {
+                    { "Name", rowName },
+                    { "NotCode", notCode },
+                    { "Values", values }
+                });
             }
+        }
 
-            values["Total"] = total;
+        return items;
+    }
 
-            items.Add(new Dictionary<string, object>
+    private class RowInfo
+    {
+        public string Name { get; set; } = string.Empty;
+        public string NotCode { get; set; } = string.Empty;
+        public List<string> AccountCodes { get; set; } = new List<string>();
+    }
+
+    private List<RowInfo> GetRowNamesByL1Code(string l1Code, string mainPrefix, List<string> allAccountCodes)
+    {
+        var result = new List<RowInfo>();
+        
+        // NOT: 13 için tüm hesapları "Diğer Alacaklar" olarak birleştir
+        if (l1Code == "13" && mainPrefix == "1")
+        {
+            result.Add(new RowInfo
             {
-                { "Name", accountData.AccountName },
-                { "AccountCode", accountData.AccountCode },
-                { "Values", values }
+                Name = "Diğer Alacaklar",
+                NotCode = "13",
+                AccountCodes = allAccountCodes
+            });
+            return result;
+        }
+
+        // NOT: 50 için tüm hesapları "Ödenmiş Sermaye" olarak birleştir (Sermaye Düzeltmesi dahil)
+        if (l1Code == "50" && mainPrefix == "5")
+        {
+            result.Add(new RowInfo
+            {
+                Name = "Ödenmiş Sermaye",
+                NotCode = "50",
+                AccountCodes = allAccountCodes
+            });
+            return result;
+        }
+
+        // Standart durum: Tek satır
+        var rowName = GetRowNameByL1Code(l1Code, mainPrefix);
+        if (!string.IsNullOrEmpty(rowName))
+        {
+            result.Add(new RowInfo
+            {
+                Name = rowName,
+                NotCode = l1Code,
+                AccountCodes = allAccountCodes
             });
         }
 
-        // Hesap koduna göre sırala
-        items = items.OrderBy(i => i["AccountCode"].ToString()).ToList();
+        return result;
+    }
 
-        return items;
+    private string GetRowNameByL1Code(string l1Code, string mainPrefix)
+    {
+        // Görüntüdeki satır isimlerine göre mapping
+        var mapping = new Dictionary<string, Dictionary<string, string>>
+        {
+            ["2"] = new Dictionary<string, string> // DURAN VARLIKLAR
+            {
+                ["22"] = "Uzun Vadeli Alacaklar",
+                ["23"] = "Diğer Uzun Vadeli Alacaklar",
+                ["24"] = "Uzun Vadeli Finansal Yatırımlar",
+                ["25"] = "Maddi Duran Varlıklar",
+                ["26"] = "Maddi Olmayan Duran Varlıklar",
+                ["27"] = "Tükenmeye Tabi Varlıklar",
+                ["28"] = "Peşin Ödenmiş Giderler",
+                ["29"] = "Ertelenmiş Vergiler"
+            },
+            ["1"] = new Dictionary<string, string> // DÖNEN VARLIKLAR
+            {
+                ["10"] = "Nakit Ve Nakit Benzerleri",
+                ["11"] = "Menkul Kıymetler",
+                ["12"] = "Ticari Alacaklar",
+                ["13"] = "Ortaklardan Alacaklar",
+                ["131"] = "Diğer Alacaklar", // 131, 132, 133, 134, 135, 136, 137, 138, 139
+                ["14"] = "Şüpheli Ticari Alacaklar Karşılığı (-)",
+                ["15"] = "Stoklar",
+                ["16"] = "Kısa Vadeli Finansal Kiralamalar",
+                ["17"] = "Yapılmakta Olan Yatırımlar (İnşaat)",
+                ["18"] = "Peşin Ödenmiş Giderler",
+                ["19"] = "Diğer Dönen Varlıklar"
+            },
+            ["5"] = new Dictionary<string, string> // ÖZKAYNAKLAR
+            {
+                ["50"] = "Ödenmiş Sermaye",
+                ["501"] = "Sermaye Düzeltmesi (+)", // 501, 502, 503, 504, 505, 506, 507, 508, 509
+                ["502"] = "Sermaye Düzeltmesi (-)", // 502, 503, 504, 505, 506, 507, 508, 509
+                ["52"] = "Sermaye Yedekleri",
+                ["54"] = "Kar Yedekleri",
+                ["57"] = "Geçmiş Yıl Karları (+)",
+                ["58"] = "Geçmiş Yıl Zararları (-)",
+                ["59"] = "Dönem Net Karı/(Zararı)"
+            },
+            ["4"] = new Dictionary<string, string> // UZUN VADELİ KAYNAKLAR
+            {
+                ["40"] = "Borçlanmalar UV",
+                ["41"] = "Ticari Borçlar UV",
+                ["42"] = "Kiralama Yükümlülükleri UV",
+                ["43"] = "Ortaklara Borçlar UV",
+                ["431"] = "Kiralama Yükümlülükleri UV", // 431, 432, 433, 434, 435, 436, 437, 438, 439
+                ["44"] = "Alınan Avanslar UV",
+                ["47"] = "Karşılıklar UV",
+                ["48"] = "Diğer Karşılıklar UV",
+                ["49"] = "Diğer Yükümlülükler UV"
+            },
+            ["3"] = new Dictionary<string, string> // CURRENT LIABILITIES
+            {
+                ["30"] = "Borçlanmalar KV",
+                ["32"] = "Ticari Borçlar KV",
+                ["33"] = "Ortaklara Borçlar KV",
+                ["331"] = "Diğer Borçlar KV", // 331, 332, 333, 334, 335, 336, 337, 338, 339
+                ["34"] = "Alınan Avanslar KV",
+                ["35"] = "Yıllara Yaygın İnşaat Onarım Hakedişleri KV",
+                ["36"] = "Ödenecek Vergi Ve Fonlar KV",
+                ["37"] = "Karşılıklar KV",
+                ["38"] = "Ertelenmiş Gelirler KV",
+                ["39"] = "Diğer Yükümlülükler KV"
+            }
+        };
+
+        if (mapping.ContainsKey(mainPrefix) && mapping[mainPrefix].ContainsKey(l1Code))
+        {
+            return mapping[mainPrefix][l1Code];
+        }
+
+        // Eğer mapping'de yoksa, hesap adını kullan
+        return $"L1: {l1Code}";
     }
 
     private Dictionary<string, decimal> CalculateSectionTotal(

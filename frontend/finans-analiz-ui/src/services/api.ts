@@ -198,6 +198,7 @@ export const mizanApi = {
 export interface BilancoItem {
   Name: string
   AccountCode?: string
+  NotCode?: string
   IsCategory?: boolean
   IsTotal?: boolean
   Values: {
@@ -213,9 +214,28 @@ export interface BilancoData {
   kaynaklar: BilancoItem[]
 }
 
+export interface NotCodeDetail {
+  AccountCode: string
+  AccountName: string
+  Values: {
+    [key: string]: number
+  }
+  Total: number
+}
+
+export interface NotCodeDetailsData {
+  NotCode: string
+  Year: number
+  Periods: Array<{ year: number; month: number }>
+  Accounts: NotCodeDetail[]
+}
+
 export const bilancoApi = {
   getBilanco: (companyId: number, year?: number) =>
     api.get<BilancoData>(`/bilanco/company/${companyId}`, { params: year ? { year } : {} }),
+  
+  getNotCodeDetails: (companyId: number, notCode: string, year?: number) =>
+    api.get<NotCodeDetailsData>(`/bilanco/company/${companyId}/not/${notCode}/details`, { params: year ? { year } : {} }),
 }
 
 export default api
