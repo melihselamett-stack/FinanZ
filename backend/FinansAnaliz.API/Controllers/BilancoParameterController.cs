@@ -552,22 +552,24 @@ public class BilancoParameterController : ControllerBase
             },
             ["4"] = new Dictionary<string, string>
             {
-                ["40"] = "Ödenecek Vergi Ve Diğer Yükümlülükler",
-                ["42"] = "Borçlar",
-                ["43"] = "Ticari Borçlar",
-                ["44"] = "Diğer Borçlar",
-                ["47"] = "Borç Ve Gider Karşılıkları",
-                ["48"] = "Gelir Tahakkukları"
+                ["40"] = "Mali Borçlanmalar",
+                ["42"] = "Ticari Borçlar",
+                ["43"] = "Diğer Borçlar",
+                ["44"] = "Alınan Avanslar",
+                ["47"] = "Karşılıklar",
+                ["48"] = "Diğer Karşılıklar"
             },
             ["3"] = new Dictionary<string, string>
             {
-                ["30"] = "Ticari Borçlar",
-                ["32"] = "Diğer Borçlar",
-                ["33"] = "Vergi Ve Diğer Yükümlülükler",
-                ["36"] = "Ödenecek Vergi Ve Diğer Yükümlülükler",
-                ["37"] = "Borç Ve Gider Karşılıkları",
-                ["38"] = "Ertelenmiş Gelirler KV",
-                ["39"] = "Diğer Yükümlülükler KV"
+                ["30"] = "Mali Borçlanmalar",
+                ["32"] = "Ticari Borçlar",
+                ["33"] = "Diğer Borçlar",
+                ["34"] = "Alınan Avanslar",
+                ["35"] = "Yıllara Yaygın İnşaat Onarım Hakedişleri",
+                ["36"] = "Ödenecek Vergi Ve Fonlar",
+                ["37"] = "Karşılıklar",
+                ["38"] = "Ertelenmiş Gelirler",
+                ["39"] = "Diğer Yükümlülükler"
             }
         };
 
@@ -643,7 +645,6 @@ public class BilancoParameterController : ControllerBase
             new() { NotCode = "11", Section = "Varliklar", AccountName = "Menkul Kıymetler", DisplayOrder = 10, AccountCodePrefixes = new List<string> { "11" } },
             new() { NotCode = "12", Section = "Varliklar", AccountName = "Ticari Alacaklar", DisplayOrder = 11, AccountCodePrefixes = new List<string> { "12" } },
             new() { NotCode = "13", Section = "Varliklar", AccountName = "Diğer Alacaklar", DisplayOrder = 12, AccountCodePrefixes = new List<string> { "13" } },
-            new() { NotCode = "14", Section = "Varliklar", AccountName = "Şüpheli Ticari Alacaklar Karşılığı (-)", DisplayOrder = 13, AccountCodePrefixes = new List<string> { "14" } },
             new() { NotCode = "15", Section = "Varliklar", AccountName = "Stoklar", DisplayOrder = 14, AccountCodePrefixes = new List<string> { "15" } },
             new() { NotCode = "16", Section = "Varliklar", AccountName = "Kısa Vadeli Finansal Kiralamalar", DisplayOrder = 15, AccountCodePrefixes = new List<string> { "16" } },
             new() { NotCode = "17", Section = "Varliklar", AccountName = "Yapılmakta Olan Yatırımlar (İnşaat)", DisplayOrder = 16, AccountCodePrefixes = new List<string> { "17" } },
@@ -662,7 +663,7 @@ public class BilancoParameterController : ControllerBase
             new() { NotCode = "40", Section = "Kaynaklar", AccountName = "Borçlanmalar UV", DisplayOrder = 7, AccountCodePrefixes = new List<string> { "40" } },
             new() { NotCode = "41", Section = "Kaynaklar", AccountName = "Ticari Borçlar UV", DisplayOrder = 8, AccountCodePrefixes = new List<string> { "41" } },
             new() { NotCode = "42", Section = "Kaynaklar", AccountName = "Kiralama Yükümlülükleri UV", DisplayOrder = 9, AccountCodePrefixes = new List<string> { "42" } },
-            new() { NotCode = "43", Section = "Kaynaklar", AccountName = "Ortaklara Borçlar UV", DisplayOrder = 10, AccountCodePrefixes = new List<string> { "43" } },
+            new() { NotCode = "43", Section = "Kaynaklar", AccountName = "Diğer Borçlar UV", DisplayOrder = 10, AccountCodePrefixes = new List<string> { "43" } },
             new() { NotCode = "44", Section = "Kaynaklar", AccountName = "Alınan Avanslar UV", DisplayOrder = 11, AccountCodePrefixes = new List<string> { "44" } },
             new() { NotCode = "47", Section = "Kaynaklar", AccountName = "Karşılıklar UV", DisplayOrder = 12, AccountCodePrefixes = new List<string> { "47" } },
             new() { NotCode = "48", Section = "Kaynaklar", AccountName = "Diğer Karşılıklar UV", DisplayOrder = 13, AccountCodePrefixes = new List<string> { "48" } },
@@ -671,7 +672,7 @@ public class BilancoParameterController : ControllerBase
             // KAYNAKLAR - CURRENT LIABILITIES
             new() { NotCode = "30", Section = "Kaynaklar", AccountName = "Borçlanmalar KV", DisplayOrder = 15, AccountCodePrefixes = new List<string> { "30" } },
             new() { NotCode = "32", Section = "Kaynaklar", AccountName = "Ticari Borçlar KV", DisplayOrder = 16, AccountCodePrefixes = new List<string> { "32" } },
-            new() { NotCode = "33", Section = "Kaynaklar", AccountName = "Ortaklara Borçlar KV", DisplayOrder = 17, AccountCodePrefixes = new List<string> { "33" } },
+            new() { NotCode = "33", Section = "Kaynaklar", AccountName = "Diğer Borçlar KV", DisplayOrder = 17, AccountCodePrefixes = new List<string> { "33" } },
             new() { NotCode = "34", Section = "Kaynaklar", AccountName = "Alınan Avanslar KV", DisplayOrder = 18, AccountCodePrefixes = new List<string> { "34" } },
             new() { NotCode = "35", Section = "Kaynaklar", AccountName = "Yıllara Yaygın İnşaat Onarım Hakedişleri KV", DisplayOrder = 19, AccountCodePrefixes = new List<string> { "35" } },
             new() { NotCode = "36", Section = "Kaynaklar", AccountName = "Ödenecek Vergi Ve Fonlar KV", DisplayOrder = 20, AccountCodePrefixes = new List<string> { "36" } },

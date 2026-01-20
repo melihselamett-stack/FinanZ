@@ -156,7 +156,7 @@ public class BilancoController : ControllerBase
         }
 
         // CURRENT LIABILITIES başlığı
-        kaynaklarList.Add(new { Name = "CURRENT LIABILITIES", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        kaynaklarList.Add(new { Name = "KISA VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
         
         // CURRENT LIABILITIES alt kalemleri (L1 kodlarına göre grupla)
         var kisaVadeli = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "3" });
@@ -167,7 +167,7 @@ public class BilancoController : ControllerBase
         if (kisaVadeli.Count > 0)
         {
             var kisaVadeliToplam = CalculateSectionTotal(kisaVadeli.Cast<object>().ToList(), allPeriods);
-            kaynaklarList.Add(new { Name = "CURRENT LIABILITIES", IsCategory = true, NotCode = (string?)null, Values = kisaVadeliToplam });
+            kaynaklarList.Add(new { Name = "KISA VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = kisaVadeliToplam });
         }
 
         // TOPLAM YÜKÜMLÜLÜKLER
@@ -669,9 +669,7 @@ public class BilancoController : ControllerBase
                 ["10"] = "Nakit Ve Nakit Benzerleri",
                 ["11"] = "Menkul Kıymetler",
                 ["12"] = "Ticari Alacaklar",
-                ["13"] = "Ortaklardan Alacaklar",
-                ["131"] = "Diğer Alacaklar", // 131, 132, 133, 134, 135, 136, 137, 138, 139
-                ["14"] = "Şüpheli Ticari Alacaklar Karşılığı (-)",
+                ["13"] = "Diğer Alacaklar",
                 ["15"] = "Stoklar",
                 ["16"] = "Kısa Vadeli Finansal Kiralamalar",
                 ["17"] = "Yapılmakta Olan Yatırımlar (İnşaat)",
@@ -681,8 +679,6 @@ public class BilancoController : ControllerBase
             ["5"] = new Dictionary<string, string> // ÖZKAYNAKLAR
             {
                 ["50"] = "Ödenmiş Sermaye",
-                ["501"] = "Sermaye Düzeltmesi (+)", // 501, 502, 503, 504, 505, 506, 507, 508, 509
-                ["502"] = "Sermaye Düzeltmesi (-)", // 502, 503, 504, 505, 506, 507, 508, 509
                 ["52"] = "Sermaye Yedekleri",
                 ["54"] = "Kar Yedekleri",
                 ["57"] = "Geçmiş Yıl Karları (+)",
@@ -694,8 +690,7 @@ public class BilancoController : ControllerBase
                 ["40"] = "Borçlanmalar UV",
                 ["41"] = "Ticari Borçlar UV",
                 ["42"] = "Kiralama Yükümlülükleri UV",
-                ["43"] = "Ortaklara Borçlar UV",
-                ["431"] = "Kiralama Yükümlülükleri UV", // 431, 432, 433, 434, 435, 436, 437, 438, 439
+                ["43"] = "Diğer Borçlar UV",
                 ["44"] = "Alınan Avanslar UV",
                 ["47"] = "Karşılıklar UV",
                 ["48"] = "Diğer Karşılıklar UV",
@@ -705,8 +700,7 @@ public class BilancoController : ControllerBase
             {
                 ["30"] = "Borçlanmalar KV",
                 ["32"] = "Ticari Borçlar KV",
-                ["33"] = "Ortaklara Borçlar KV",
-                ["331"] = "Diğer Borçlar KV", // 331, 332, 333, 334, 335, 336, 337, 338, 339
+                ["33"] = "Diğer Borçlar KV",
                 ["34"] = "Alınan Avanslar KV",
                 ["35"] = "Yıllara Yaygın İnşaat Onarım Hakedişleri KV",
                 ["36"] = "Ödenecek Vergi Ve Fonlar KV",
