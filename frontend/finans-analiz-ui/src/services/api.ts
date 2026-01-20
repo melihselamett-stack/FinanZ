@@ -230,12 +230,34 @@ export interface NotCodeDetailsData {
   Accounts: NotCodeDetail[]
 }
 
+export interface BilancoParameter {
+  NotCode: string
+  Section: string
+  AccountName: string
+  DisplayOrder: number
+  AccountCodePrefixes: string[]
+}
+
 export const bilancoApi = {
   getBilanco: (companyId: number, year?: number) =>
     api.get<BilancoData>(`/bilanco/company/${companyId}`, { params: year ? { year } : {} }),
   
   getNotCodeDetails: (companyId: number, notCode: string, year?: number) =>
     api.get<NotCodeDetailsData>(`/bilanco/company/${companyId}/not/${notCode}/details`, { params: year ? { year } : {} }),
+}
+
+export const bilancoParameterApi = {
+  getParameters: (companyId: number) =>
+    api.get<BilancoParameter[]>(`/bilancoparameter/company/${companyId}`),
+  
+  updateParameters: (companyId: number, parameters: BilancoParameter[]) =>
+    api.put(`/bilancoparameter/company/${companyId}`, parameters),
+  
+  resetToDefaults: (companyId: number) =>
+    api.post(`/bilancoparameter/company/${companyId}/reset`),
+  
+  getReportRows: (companyId: number, year?: number) =>
+    api.get<BilancoReportRowsData>(`/bilancoparameter/company/${companyId}/report-rows`, { params: year ? { year } : {} }),
 }
 
 export default api

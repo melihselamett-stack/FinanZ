@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Text.Json;
 using FinansAnaliz.API.Data;
+using FinansAnaliz.API.DTOs;
 
 namespace FinansAnaliz.API.Controllers;
 
@@ -300,6 +302,30 @@ public class BilancoController : ControllerBase
     {
         var items = new List<Dictionary<string, object>>();
 
+        // Custom parametrelerde tanımlı NOT kodlarını al
+        var company = await _context.Companies.FindAsync(companyId);
+        var customNotCodes = new HashSet<string>();
+        if (company != null && !string.IsNullOrEmpty(company.BilancoParametersJson))
+        {
+            try
+            {
+                var customParams = JsonSerializer.Deserialize<List<BilancoParameterDto>>(company.BilancoParametersJson);
+                if (customParams != null)
+                {
+                    var section = codePrefixes[0] == "1" || codePrefixes[0] == "2" ? "Varliklar" : "Kaynaklar";
+                    var relevantParams = customParams.Where(p => p.Section == section);
+                    foreach (var param in relevantParams)
+                    {
+                        customNotCodes.Add(param.NotCode);
+                    }
+                }
+            }
+            catch
+            {
+                // JSON parse hatası durumunda devam et
+            }
+        }
+
         // Yüklenen mizan verilerinden sadece leaf (yaprak) hesapları getir
         var accountsWithBalances = await _context.MonthlyBalances
             .Include(m => m.AccountPlan)
@@ -342,10 +368,15 @@ public class BilancoController : ControllerBase
             })
             .ToList();
 
+        // Custom parametrelerde tanımlı ama veritabanında olmayan NOT kodları için işle
+        // Bu NOT kodları için direkt olarak GetRowNamesByL1Code çağrılacak
+
+        // Önce veritabanındaki hesaplardan gelen L1 gruplarını işle
         foreach (var l1Group in l1Groups.OrderBy(g => g.Key))
         {
             var l1Code = l1Group.Key;
-            var rowNames = GetRowNamesByL1Code(l1Code, codePrefixes[0], l1Group.Select(a => a.AccountCode).ToList());
+            var allAccountCodes = l1Group.Select(a => a.AccountCode).ToList();
+            var rowNames = await GetRowNamesByL1Code(companyId, l1Code, codePrefixes[0], allAccountCodes);
             
             foreach (var rowInfo in rowNames)
             {
@@ -385,6 +416,96 @@ public class BilancoController : ControllerBase
             }
         }
 
+        // Custom parametrelerde tanımlı ama veritabanında olmayan NOT kodları için işle
+        foreach (var customNotCode in customNotCodes)
+        {
+            if (!l1Groups.Any(g => g.Key == customNotCode))
+            {
+                // Bu NOT kodu için boş hesap listesi ile row names al
+                var rowNames = await GetRowNamesByL1Code(companyId, customNotCode, codePrefixes[0], new List<string>());
+                
+                foreach (var rowInfo in rowNames)
+                {
+                    var rowName = rowInfo.Name;
+                    var notCode = rowInfo.NotCode;
+                    var accountCodes = rowInfo.AccountCodes;
+
+                    // Eğer accountCodes boşsa, NOT kodunun ilk 2 hanesine göre hesapları bul
+                    // AMA codePrefixes ile de filtrele (DÖNEN için 1, DURAN için 2, vb.)
+                    if (!accountCodes.Any())
+                    {
+                        // NOT kodunun ilk 2 hanesine göre hesapları bul, ama codePrefixes ile de filtrele
+                        var matchingAccounts = accountsWithBalances.Where(a =>
+                        {
+                            // Önce codePrefixes kontrolü (DÖNEN VARLIKLAR için 1, DURAN VARLIKLAR için 2, vb.)
+                            var codeStartsWithPrefix = codePrefixes.Any(prefix => a.AccountCode.StartsWith(prefix));
+                            if (!codeStartsWithPrefix)
+                                return false;
+
+                            // Sonra NOT koduna göre kontrol
+                            var codeParts = a.AccountCode.Split('.');
+                            var firstPart = codeParts.Length > 0 ? codeParts[0] : a.AccountCode;
+                            if (customNotCode.Length >= 2 && firstPart.Length >= 2)
+                            {
+                                return firstPart.Substring(0, 2) == customNotCode;
+                            }
+                            return firstPart.StartsWith(customNotCode);
+                        }).ToList();
+
+                        accountCodes = matchingAccounts.Select(a => a.AccountCode).ToList();
+                    }
+                    else
+                    {
+                        // AccountCodes varsa, codePrefixes ile de filtrele
+                        // Ayrıca accountsWithBalances içinde olan hesapları kontrol et
+                        accountCodes = accountCodes.Where(code =>
+                        {
+                            // Önce codePrefixes kontrolü
+                            if (!codePrefixes.Any(prefix => code.StartsWith(prefix)))
+                                return false;
+                            
+                            // Sonra accountsWithBalances içinde olup olmadığını kontrol et
+                            return accountsWithBalances.Any(a => a.AccountCode == code);
+                        }).ToList();
+                    }
+
+                    // Eğer accountCodes hala boşsa, bu NOT kodu için veri yok demektir, atla
+                    if (!accountCodes.Any())
+                        continue;
+
+                    var values = new Dictionary<string, decimal>();
+                    decimal total = 0;
+
+                    // Her dönem için bakiye hesapla
+                    // accountsWithBalances zaten codePrefixes ile filtrelenmiş, bu yüzden sadece accountCodes ile eşleşenleri al
+                    foreach (var (periodYear, periodMonth) in periods)
+                    {
+                        decimal periodTotal = 0;
+                        foreach (var accountData in accountsWithBalances.Where(a => accountCodes.Contains(a.AccountCode)))
+                        {
+                            var balance = accountData.Balances
+                                .Where(b => b.Month == periodMonth)
+                                .Sum(b => b.DebitBalance - b.CreditBalance);
+                            periodTotal += balance;
+                        }
+
+                        var periodKey = $"{periodMonth}";
+                        values[periodKey] = periodTotal;
+                        total += periodTotal;
+                    }
+
+                    values["Total"] = total;
+
+                    items.Add(new Dictionary<string, object>
+                    {
+                        { "Name", rowName },
+                        { "NotCode", notCode },
+                        { "Values", values }
+                    });
+                }
+            }
+        }
+
         return items;
     }
 
@@ -395,10 +516,99 @@ public class BilancoController : ControllerBase
         public List<string> AccountCodes { get; set; } = new List<string>();
     }
 
-    private List<RowInfo> GetRowNamesByL1Code(string l1Code, string mainPrefix, List<string> allAccountCodes)
+    private async Task<List<RowInfo>> GetRowNamesByL1Code(int companyId, string l1Code, string mainPrefix, List<string> allAccountCodes)
     {
         var result = new List<RowInfo>();
         
+        // Önce custom parametreleri kontrol et
+        var company = await _context.Companies.FindAsync(companyId);
+        if (company != null && !string.IsNullOrEmpty(company.BilancoParametersJson))
+        {
+            try
+            {
+                var customParams = JsonSerializer.Deserialize<List<BilancoParameterDto>>(company.BilancoParametersJson);
+                if (customParams != null)
+                {
+                    var section = mainPrefix == "1" || mainPrefix == "2" ? "Varliklar" : "Kaynaklar";
+                    var customParam = customParams.FirstOrDefault(p => p.NotCode == l1Code && p.Section == section);
+                    
+                    if (customParam != null)
+                    {
+                        // Custom parametreye göre hesap kodlarını filtrele
+                        List<string> filteredCodes;
+                        
+                        if (customParam.AccountCodePrefixes != null && customParam.AccountCodePrefixes.Any())
+                        {
+                            // Eğer prefix'ler tanımlıysa, onlara göre filtrele
+                            filteredCodes = allAccountCodes.Where(code =>
+                            {
+                                var codeParts = code.Split('.');
+                                var firstPart = codeParts.Length > 0 ? codeParts[0] : code;
+                                
+                                return customParam.AccountCodePrefixes.Any(prefix =>
+                                {
+                                    // Prefix ile eşleşen kodları bul
+                                    if (firstPart.StartsWith(prefix))
+                                    {
+                                        // Eğer prefix 2 haneli ise (örn: "10"), ilk 2 haneyi kontrol et
+                                        if (prefix.Length == 2 && firstPart.Length >= 2)
+                                        {
+                                            return firstPart.Substring(0, 2) == prefix;
+                                        }
+                                        // Eğer prefix 3 haneli ise (örn: "100"), ilk 3 haneyi kontrol et
+                                        if (prefix.Length == 3 && firstPart.Length >= 3)
+                                        {
+                                            return firstPart.Substring(0, 3) == prefix;
+                                        }
+                                        return firstPart.StartsWith(prefix);
+                                    }
+                                    return false;
+                                });
+                            }).ToList();
+                        }
+                        else
+                        {
+                            // Eğer prefix tanımlı değilse, NOT kodunun ilk 2 hanesine göre otomatik filtrele
+                            // Örneğin NOT 14 için, 14 ile başlayan tüm hesapları al
+                            filteredCodes = allAccountCodes.Where(code =>
+                            {
+                                var codeParts = code.Split('.');
+                                var firstPart = codeParts.Length > 0 ? codeParts[0] : code;
+                                
+                                // NOT kodunun ilk 2 hanesine göre kontrol et
+                                if (l1Code.Length >= 2 && firstPart.Length >= 2)
+                                {
+                                    return firstPart.Substring(0, 2) == l1Code;
+                                }
+                                return firstPart.StartsWith(l1Code);
+                            }).ToList();
+                            
+                            // Eğer hala boşsa, tüm hesapları al (fallback)
+                            if (!filteredCodes.Any())
+                            {
+                                filteredCodes = allAccountCodes;
+                            }
+                        }
+
+                        result.Add(new RowInfo
+                        {
+                            Name = customParam.AccountName,
+                            NotCode = l1Code,
+                            AccountCodes = filteredCodes
+                        });
+                        return result;
+                    }
+                }
+            }
+            catch
+            {
+                // JSON parse hatası durumunda varsayılan mapping'e devam et
+            }
+        }
+
+        // Custom parametre yoksa varsayılan mantığı kullan
+        
+        // Custom parametre yoksa varsayılan mantığı kullan
         // NOT: 13 için tüm hesapları "Diğer Alacaklar" olarak birleştir
         if (l1Code == "13" && mainPrefix == "1")
         {

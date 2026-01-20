@@ -27,6 +27,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.CompanyName).IsRequired().HasMaxLength(200);
             entity.Property(e => e.TaxNumber).HasMaxLength(20);
             entity.Property(e => e.AccountCodeSeparator).HasMaxLength(5).HasDefaultValue(".");
+            entity.Property(e => e.BilancoParametersJson).HasColumnType("nvarchar(max)");
             
             entity.HasOne(e => e.User)
                 .WithMany(u => u.Companies)

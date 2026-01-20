@@ -15,6 +15,8 @@ public class Company
     public string? PropertyName4 { get; set; }
     public string? PropertyName5 { get; set; }
     
+    public string? BilancoParametersJson { get; set; } // JSON formatında bilanço parametreleri
+    
     public virtual ApplicationUser? User { get; set; }
     public virtual ICollection<PropertyOption> PropertyOptions { get; set; } = new List<PropertyOption>();
     public virtual ICollection<AccountPlan> AccountPlans { get; set; } = new List<AccountPlan>();

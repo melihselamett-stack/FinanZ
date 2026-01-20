@@ -1,5 +1,14 @@
 namespace FinansAnaliz.API.DTOs;
 
+public class BilancoParameterDto
+{
+    public string NotCode { get; set; } = string.Empty;
+    public string Section { get; set; } = string.Empty;
+    public string AccountName { get; set; } = string.Empty;
+    public int DisplayOrder { get; set; }
+    public List<string> AccountCodePrefixes { get; set; } = new List<string>();
+}
+
 public class CompanyRequest
 {
     public string CompanyName { get; set; } = string.Empty;

@@ -17,6 +17,7 @@ export default function Layout() {
     { to: '/mizan', label: 'Mizan Yükle', icon: '📁' },
     { to: '/consolidated-mizan', label: 'Konsolide Mizan', icon: '📈' },
     { to: '/bilanco-raporlari', label: 'Bilanço Raporları', icon: '📑' },
+    { to: '/bilanco-parametre-ayarlari', label: 'Bilanço Parametre Ayarları', icon: '⚙️' },
   ]
 
   return (

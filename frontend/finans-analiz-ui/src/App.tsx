@@ -8,6 +8,7 @@ import AccountPlan from './pages/AccountPlan'
 import MizanUpload from './pages/MizanUpload'
 import ConsolidatedMizan from './pages/ConsolidatedMizan'
 import BilancoRaporlari from './pages/BilancoRaporlari'
+import BilancoParametreAyarlari from './pages/BilancoParametreAyarlari'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -40,6 +41,7 @@ function App() {
         <Route path="mizan" element={<MizanUpload />} />
         <Route path="consolidated-mizan" element={<ConsolidatedMizan />} />
         <Route path="bilanco-raporlari" element={<BilancoRaporlari />} />
+        <Route path="bilanco-parametre-ayarlari" element={<BilancoParametreAyarlari />} />
       </Route>
     </Routes>
   )
