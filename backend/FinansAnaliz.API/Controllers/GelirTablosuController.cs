@@ -486,4 +486,129 @@ public class GelirTablosuController : ControllerBase
 
         return result;
     }
+
+    [HttpGet("company/{companyId}/not/{notCode}/details")]
+    public async Task<ActionResult<object>> GetNotCodeDetails(int companyId, string notCode, [FromQuery] int? year)
+    {
+        if (!await UserOwnsCompany(companyId))
+            return Forbid();
+
+        // Eğer yıl belirtilmemişse, en son yılı kullan
+        if (!year.HasValue)
+        {
+            var lastYear = await _context.MonthlyBalances
+                .Where(m => m.CompanyId == companyId)
+                .OrderByDescending(m => m.Year)
+                .Select(m => m.Year)
+                .FirstOrDefaultAsync();
+
+            if (lastYear == 0)
+            {
+                return Ok(new
+                {
+                    NotCode = notCode,
+                    Year = 0,
+                    Periods = new List<object>(),
+                    Accounts = new List<object>()
+                });
+            }
+
+            year = lastYear;
+        }
+
+        // Tüm dönemleri getir
+        var allPeriodsRaw = await _context.MonthlyBalances
+            .Where(m => m.CompanyId == companyId && m.Year == year.Value)
+            .Select(m => new { m.Year, m.Month })
+            .Distinct()
+            .OrderBy(p => p.Month)
+            .ToListAsync();
+
+        // NOT koduna göre alt hesapları getir (sadece leaf hesaplar)
+        var accountsWithBalances = await _context.MonthlyBalances
+            .Include(m => m.AccountPlan)
+            .Where(m => m.CompanyId == companyId && 
+                       m.Year == year.Value &&
+                       m.AccountPlan != null &&
+                       m.AccountPlan.IsLeaf == true)
+            .ToListAsync();
+
+        // NOT koduna göre filtrele (hesap kodunun ilk üç hanesi - gelir tablosu için 3 haneli kodlar kullanılıyor)
+        var filteredAccounts = accountsWithBalances
+            .Where(m =>
+            {
+                var codeParts = m.AccountPlan!.AccountCode.Split('.');
+                var firstPart = codeParts.Length > 0 ? codeParts[0] : m.AccountPlan.AccountCode;
+                // Gelir tablosu için ilk 3 hane kullanılıyor (600, 601, 620, vb.)
+                var l1Code = firstPart.Length >= 3 ? firstPart.Substring(0, 3) : firstPart;
+                return l1Code == notCode;
+            })
+            .GroupBy(m => new { m.AccountPlanId, m.AccountPlan!.AccountCode, m.AccountPlan.AccountName })
+            .Select(g => new
+            {
+                AccountCode = g.Key.AccountCode,
+                AccountName = g.Key.AccountName,
+                Balances = g.Select(b => new
+                {
+                    b.Month,
+                    b.DebitBalance,
+                    b.CreditBalance
+                }).ToList()
+            })
+            .OrderBy(a => a.AccountCode)
+            .ToList();
+
+        var result = filteredAccounts.Select(a => new
+        {
+            a.AccountCode,
+            a.AccountName,
+            Values = allPeriodsRaw.ToDictionary(
+                p => $"{p.Month}",
+                p =>
+                {
+                    var balance = a.Balances.FirstOrDefault(b => b.Month == p.Month);
+                    if (balance == null) return 0m;
+                    
+                    // Gelirler (6 ile başlayan) için: Credit - Debit
+                    // Giderler (7 ile başlayan) için: Debit - Credit
+                    if (notCode.StartsWith("6"))
+                    {
+                        return balance.CreditBalance - balance.DebitBalance;
+                    }
+                    else if (notCode.StartsWith("7"))
+                    {
+                        return balance.DebitBalance - balance.CreditBalance;
+                    }
+                    else
+                    {
+                        // Diğer durumlar için varsayılan olarak Credit - Debit
+                        return balance.CreditBalance - balance.DebitBalance;
+                    }
+                }
+            ),
+            Total = a.Balances.Sum(b =>
+            {
+                if (notCode.StartsWith("6"))
+                {
+                    return b.CreditBalance - b.DebitBalance;
+                }
+                else if (notCode.StartsWith("7"))
+                {
+                    return b.DebitBalance - b.CreditBalance;
+                }
+                else
+                {
+                    return b.CreditBalance - b.DebitBalance;
+                }
+            })
+        }).ToList();
+
+        return Ok(new
+        {
+            NotCode = notCode,
+            Year = year.Value,
+            Periods = allPeriodsRaw.Select(p => new { p.Year, p.Month }).ToList(),
+            Accounts = result
+        });
+    }
 }

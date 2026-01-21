@@ -4,6 +4,8 @@ import { GoogleLogin } from '@react-oauth/google'
 import { useAuth } from '../context/AuthContext'
 import { authApi } from '../services/api'
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -182,20 +184,26 @@ export default function Login() {
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-700"></div>
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-gray-900 text-gray-400">veya</span>
-              </div>
+              {GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID.trim() !== '' && (
+                <>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-gray-900 text-gray-400">veya</span>
+                  </div>
+                </>
+              )}
             </div>
             
-            <div className="mt-4 flex justify-center">
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={() => setError('Google ile giriş başarısız')}
-                theme="filled_black"
-                size="large"
-                text="signin_with"
-              />
-            </div>
+            {GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID.trim() !== '' && (
+              <div className="mt-4 flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setError('Google ile giriş başarısız')}
+                  theme="filled_black"
+                  size="large"
+                  text="signin_with"
+                />
+              </div>
+            )}
           </div>
           
           <p className="mt-6 text-center text-sm text-gray-400">

@@ -238,6 +238,21 @@ export interface BilancoParameter {
   AccountCodePrefixes: string[]
 }
 
+export interface BilancoReportRow {
+  NotCode: string
+  AccountName: string
+  Section: string
+  SubSection: string
+  AccountCodes: string[]
+  AccountCodePrefixes: string[]
+}
+
+export interface BilancoReportRowsData {
+  Year: number
+  Varliklar: BilancoReportRow[]
+  Kaynaklar: BilancoReportRow[]
+}
+
 export const bilancoApi = {
   getBilanco: (companyId: number, year?: number) =>
     api.get<BilancoData>(`/bilanco/company/${companyId}`, { params: year ? { year } : {} }),
@@ -280,6 +295,64 @@ export interface GelirTablosuData {
 export const gelirTablosuApi = {
   getGelirTablosu: (companyId: number, year?: number) =>
     api.get<GelirTablosuData>(`/gelirtablosu/company/${companyId}`, { params: year ? { year } : {} }),
+  
+  getNotCodeDetails: (companyId: number, notCode: string, year?: number) =>
+    api.get<NotCodeDetailsData>(`/gelirtablosu/company/${companyId}/not/${notCode}/details`, { params: year ? { year } : {} }),
+}
+
+export interface PropertyInfo {
+  Index: number
+  Name: string
+  Values: string[]
+}
+
+export interface PropertyFilter {
+  PropertyIndex: number
+  PropertyValue: string
+}
+
+export interface GiderRaporuItem {
+  Name: string
+  PropertyFilters?: PropertyFilter[]
+  AccountCodePrefix?: string
+  Values?: { [key: string]: number }
+}
+
+export interface GiderRaporuGroup {
+  Name: string
+  DisplayOrder: number
+  Items: GiderRaporuItem[]
+  Total?: { [key: string]: number }
+}
+
+export interface GiderRaporuData {
+  year: number
+  periods: Array<{ year: number; month: number }>
+  groups: GiderRaporuGroup[]
+}
+
+export interface AccountCodeOption {
+  AccountCode: string
+  AccountName: string
+}
+
+export const giderRaporlariApi = {
+  getAvailableProperties: (companyId: number) =>
+    api.get<PropertyInfo[]>(`/giderraporlari/company/${companyId}/properties`),
+  
+  getAccountCodes: (companyId: number, search?: string) => {
+    const params = search && search.trim() ? { search: search.trim() } : {}
+    return api.get<AccountCodeOption[]>(`/giderraporlari/company/${companyId}/account-codes`, { params })
+  },
+  
+  getGiderRaporu: (companyId: number, year: number, groups: GiderRaporuGroup[]) =>
+    api.post<GiderRaporuData>(`/giderraporlari/company/${companyId}/report`, { Groups: groups }, { params: { year } }),
+  
+  saveConfig: (companyId: number, groups: GiderRaporuGroup[]) =>
+    api.post(`/giderraporlari/company/${companyId}/save-config`, { Groups: groups }),
+  
+  getConfig: (companyId: number) =>
+    api.get<{ Groups: GiderRaporuGroup[] }>(`/giderraporlari/company/${companyId}/config`),
 }
 
 export default api

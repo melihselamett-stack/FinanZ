@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { GoogleLogin } from '@react-oauth/google'
 import { useAuth } from '../context/AuthContext'
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+
 export default function Register() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -136,20 +138,24 @@ export default function Register() {
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-700"></div>
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-gray-900 text-gray-400">veya</span>
-              </div>
+              {GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID.trim() !== '' && (
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-gray-900 text-gray-400">veya</span>
+                </div>
+              )}
             </div>
             
-            <div className="mt-4 flex justify-center">
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={() => setError('Google ile kayıt başarısız')}
-                theme="filled_black"
-                size="large"
-                text="signup_with"
-              />
-            </div>
+            {GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID.trim() !== '' && (
+              <div className="mt-4 flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setError('Google ile kayıt başarısız')}
+                  theme="filled_black"
+                  size="large"
+                  text="signup_with"
+                />
+              </div>
+            )}
           </div>
           
           <p className="mt-6 text-center text-sm text-gray-400">
