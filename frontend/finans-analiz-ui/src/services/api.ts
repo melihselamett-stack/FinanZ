@@ -260,5 +260,27 @@ export const bilancoParameterApi = {
     api.get<BilancoReportRowsData>(`/bilancoparameter/company/${companyId}/report-rows`, { params: year ? { year } : {} }),
 }
 
+export interface GelirTablosuItem {
+  Name: string
+  NotCode?: string
+  IsCategory?: boolean
+  IsTotal?: boolean
+  Values: {
+    [key: string]: number
+    Total: number
+  }
+}
+
+export interface GelirTablosuData {
+  year: number
+  periods: Array<{ year: number; month: number }>
+  items: GelirTablosuItem[]
+}
+
+export const gelirTablosuApi = {
+  getGelirTablosu: (companyId: number, year?: number) =>
+    api.get<GelirTablosuData>(`/gelirtablosu/company/${companyId}`, { params: year ? { year } : {} }),
+}
+
 export default api
 
