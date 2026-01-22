@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { companyApi, giderRaporlariApi, Company, PropertyInfo, GiderRaporuItem, GiderRaporuGroup, GiderRaporuData, AccountCodeOption } from '../services/api'
+import { companyApi, giderRaporlariApi, Company, PropertyInfo, GiderRaporuItem, GiderRaporuGroup, GiderRaporuData, AccountCodeOption, GiderRaporuTemplate } from '../services/api'
 import * as XLSX from 'xlsx'
 
 export default function GiderRaporlari() {
@@ -32,6 +32,13 @@ export default function GiderRaporlari() {
   const [selectedGroupsForMerge, setSelectedGroupsForMerge] = useState<number[]>([])
   const [showMergeDialog, setShowMergeDialog] = useState(false)
   const [mergeGroupName, setMergeGroupName] = useState('')
+  
+  // Şablon yönetimi
+  const [templates, setTemplates] = useState<GiderRaporuTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
+  const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [templatesLoading, setTemplatesLoading] = useState(false)
 
   const months = [
     'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
@@ -47,6 +54,7 @@ export default function GiderRaporlari() {
       const company = companies.find(c => c.id === selectedCompanyId)
       setSelectedCompany(company || null)
       loadAvailableProperties(selectedCompanyId)
+      loadTemplates(selectedCompanyId)
       if (groups.length > 0) {
         loadGiderRaporuData(selectedCompanyId, selectedYear)
       }
@@ -198,6 +206,172 @@ export default function GiderRaporlari() {
       setAccountCodes(prev => ({ ...prev, [key]: [] }))
     } finally {
       setAccountCodesLoading(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
+  const loadTemplates = async (companyId: number) => {
+    try {
+      setTemplatesLoading(true)
+      console.log('Şablonlar yükleniyor - companyId:', companyId)
+      const response = await giderRaporlariApi.getTemplates(companyId)
+      console.log('Şablonlar yüklendi - response:', response)
+      console.log('Şablonlar yüklendi - response.data:', response.data)
+      console.log('Şablonlar yüklendi - response.data type:', typeof response.data, Array.isArray(response.data))
+      
+      // Response.data direkt array olabilir veya içinde data olabilir
+      let templatesList: GiderRaporuTemplate[] = []
+      if (Array.isArray(response.data)) {
+        templatesList = response.data
+      } else if (response.data && Array.isArray(response.data.data)) {
+        templatesList = response.data.data
+      } else if (response.data && response.data.templates && Array.isArray(response.data.templates)) {
+        templatesList = response.data.templates
+      }
+      
+      console.log('Şablonlar yüklendi - templatesList:', templatesList)
+      console.log('Şablonlar yüklendi - templatesList length:', templatesList.length)
+      
+      // Template'leri normalize et (Id vs id)
+      const normalizedTemplates = templatesList.map((t: any) => ({
+        Id: t.Id || t.id || 0,
+        TemplateName: t.TemplateName || t.templateName || t.TemplateName || '',
+        CreatedAt: t.CreatedAt || t.createdAt || '',
+        UpdatedAt: t.UpdatedAt || t.updatedAt || ''
+      }))
+      
+      console.log('Şablonlar normalize edildi - normalizedTemplates:', normalizedTemplates)
+      setTemplates(normalizedTemplates)
+    } catch (error: any) {
+      console.error('Şablonlar yüklenirken hata:', error)
+      console.error('Hata detayları:', error.response?.data)
+      // Migration uygulanmamışsa sessizce boş liste kullan
+      if (error.response?.status === 500) {
+        console.warn('Şablon tablosu bulunamadı. Migration uygulanmamış olabilir.')
+        setTemplates([])
+      } else {
+        setTemplates([])
+      }
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
+  const handleSaveTemplate = async () => {
+    if (!selectedCompanyId || !templateName.trim()) {
+      setError('Şablon adı gereklidir')
+      return
+    }
+
+    if (groups.length === 0) {
+      setError('Kaydedilecek grup bulunamadı')
+      return
+    }
+
+    try {
+      const response = await giderRaporlariApi.saveTemplate(selectedCompanyId, templateName.trim(), groups)
+      console.log('Şablon kaydedildi - response:', response.data)
+      setShowSaveTemplateDialog(false)
+      setTemplateName('')
+      setError(null)
+      // Şablonları yeniden yükle
+      await loadTemplates(selectedCompanyId)
+      // Başarı mesajı göster (opsiyonel)
+      console.log('Şablon başarıyla kaydedildi:', response.data?.TemplateName || templateName.trim())
+    } catch (error: any) {
+      console.error('Şablon kaydedilirken hata:', error)
+      console.error('Hata detayları:', error.response?.data)
+      
+      const errorMessage = error.response?.data?.message || error.message || 'Bilinmeyen hata'
+      const errorDetails = error.response?.data?.details || ''
+      
+      // Migration uygulanmamışsa özel mesaj göster
+      if (errorMessage.includes('tablosu bulunamadı') || 
+          errorMessage.includes('migration') ||
+          errorMessage.includes('Invalid object name') ||
+          errorMessage.includes('GiderRaporuTemplates') ||
+          errorDetails.includes('Invalid object name')) {
+        setError('Şablon tablosu bulunamadı. Lütfen backend\'de migration\'ı uygulayın: dotnet ef database update veya SQL script\'i çalıştırın.')
+      } else {
+        setError('Şablon kaydedilirken bir hata oluştu: ' + errorMessage + (errorDetails ? ' (' + errorDetails + ')' : ''))
+      }
+    }
+  }
+
+  const handleLoadTemplate = async (templateId: number) => {
+    if (!selectedCompanyId) {
+      console.error('handleLoadTemplate: selectedCompanyId yok')
+      return
+    }
+
+    console.log('Şablon yükleniyor - templateId:', templateId, 'companyId:', selectedCompanyId)
+    
+    try {
+      const response = await giderRaporlariApi.loadTemplate(selectedCompanyId, templateId)
+      console.log('Şablon yüklendi - response:', response)
+      console.log('Şablon yüklendi - response.data:', response.data)
+      
+      // Response formatını kontrol et
+      let loadedGroups: GiderRaporuGroup[] = []
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          loadedGroups = response.data
+        } else if (response.data.Groups && Array.isArray(response.data.Groups)) {
+          loadedGroups = response.data.Groups
+        } else if (response.data.groups && Array.isArray(response.data.groups)) {
+          loadedGroups = response.data.groups
+        }
+      }
+      
+      console.log('Şablon yüklendi - loadedGroups:', loadedGroups)
+      console.log('Şablon yüklendi - loadedGroups length:', loadedGroups.length)
+      
+      if (loadedGroups.length > 0) {
+        // Groups'u normalize et
+        const normalizedGroups = loadedGroups.map((group: any, index: number) => ({
+          Name: group.Name || group.name || '',
+          DisplayOrder: group.DisplayOrder !== undefined ? group.DisplayOrder : (group.displayOrder !== undefined ? group.displayOrder : index),
+          Items: (group.Items || group.items || []).map((item: any) => ({
+            Name: item.Name || item.name || '',
+            PropertyFilters: item.PropertyFilters || item.propertyFilters || [],
+            AccountCodePrefix: item.AccountCodePrefix || item.accountCodePrefix || ''
+          }))
+        }))
+        
+        console.log('Şablon normalize edildi - normalizedGroups:', normalizedGroups)
+        setGroups(normalizedGroups)
+        setSelectedTemplateId(templateId)
+        // Şablon yüklendiğinde selectedPropertyIndex'i temizle (özellik dropdown'larını gizlemek için)
+        setSelectedPropertyIndex(null)
+        
+        // Şablon yüklendikten sonra raporu yükle
+        setTimeout(() => {
+          console.log('Rapor yükleniyor - groups:', normalizedGroups.length)
+          loadGiderRaporuData(selectedCompanyId, selectedYear, normalizedGroups)
+        }, 200)
+      } else {
+        console.warn('Şablon yüklendi ama grup bulunamadı')
+        setError('Şablon yüklendi ancak içerik bulunamadı')
+      }
+    } catch (error: any) {
+      console.error('Şablon yüklenirken hata:', error)
+      console.error('Hata detayları:', error.response?.data)
+      setError('Şablon yüklenirken bir hata oluştu: ' + (error.response?.data?.message || error.message))
+    }
+  }
+
+  const handleDeleteTemplate = async (templateId: number) => {
+    if (!selectedCompanyId) return
+    if (!confirm('Bu şablonu silmek istediğinizden emin misiniz?')) return
+
+    try {
+      await giderRaporlariApi.deleteTemplate(selectedCompanyId, templateId)
+      await loadTemplates(selectedCompanyId)
+      if (selectedTemplateId === templateId) {
+        setSelectedTemplateId(null)
+      }
+    } catch (error: any) {
+      console.error('Şablon silinirken hata:', error)
+      setError('Şablon silinirken bir hata oluştu: ' + (error.response?.data?.message || error.message))
     }
   }
 
@@ -447,10 +621,21 @@ export default function GiderRaporlari() {
     if (draggedGroup === null) return
 
     const newGroups = [...groups]
-    const dragged = newGroups[draggedGroup]
+    const draggedGroupData = newGroups[draggedGroup]
+    const targetGroupData = newGroups[targetGroupIndex]
     
+    // Eğer aynı gruba bırakılıyorsa, sadece sıralama yap
+    if (draggedGroup === targetGroupIndex) {
+      setDraggedGroup(null)
+      return
+    }
+    
+    // Taşınan grubun tüm item'larını hedef grubun item'larına ekle
+    const mergedItems = [...targetGroupData.Items, ...draggedGroupData.Items]
+    newGroups[targetGroupIndex].Items = mergedItems
+    
+    // Taşınan grubu sil
     newGroups.splice(draggedGroup, 1)
-    newGroups.splice(targetGroupIndex, 0, dragged)
     
     // DisplayOrder'ı güncelle
     newGroups.forEach((g, idx) => {
@@ -735,6 +920,70 @@ export default function GiderRaporlari() {
         </div>
       )}
 
+      {/* Şablon Kaydetme Dialog */}
+      {showSaveTemplateDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="glass p-8 max-w-md w-full relative">
+            <button
+              onClick={() => {
+                setShowSaveTemplateDialog(false)
+                setTemplateName('')
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              ✕
+            </button>
+
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-white mb-2">Formatı Kaydet</h2>
+              <p className="text-gray-400 text-sm">
+                Mevcut rapor yapılandırmasını şablon olarak kaydedin
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Şablon Adı
+                </label>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  className="input-field w-full"
+                  placeholder="Örn: Standart Gider Raporu"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && templateName.trim()) {
+                      handleSaveTemplate()
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowSaveTemplateDialog(false)
+                    setTemplateName('')
+                  }}
+                  className="btn-secondary flex-1"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={handleSaveTemplate}
+                  className="btn-primary flex-1"
+                  disabled={!templateName.trim()}
+                >
+                  Kaydet
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Grup Birleştirme Dialog */}
       {showMergeDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -798,7 +1047,53 @@ export default function GiderRaporlari() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-white">Rapor Yapılandırması</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Şablon Seçme */}
+            <select
+              value={selectedTemplateId || ''}
+              onChange={(e) => {
+                console.log('Şablon seçildi - value:', e.target.value)
+                const templateId = e.target.value ? parseInt(e.target.value) : null
+                console.log('Şablon seçildi - templateId:', templateId)
+                if (templateId && !isNaN(templateId)) {
+                  handleLoadTemplate(templateId)
+                } else {
+                  console.log('Şablon seçimi temizlendi')
+                  setSelectedTemplateId(null)
+                  setGroups([])
+                  setSelectedPropertyIndex(null) // Özellik dropdown'larını tekrar göster
+                }
+              }}
+              className="input-field text-sm"
+              disabled={templatesLoading}
+            >
+              <option value="">Şablon Seç...</option>
+              {templates && templates.length > 0 ? (
+                templates.map((template, index) => {
+                  const templateId = template.Id || (template as any).id || 0
+                  const templateName = template.TemplateName || (template as any).templateName || ''
+                  return (
+                    <option key={templateId || `template-${index}`} value={templateId}>
+                      {templateName}
+                    </option>
+                  )
+                })
+              ) : (
+                <option value="" disabled>Henüz şablon yok</option>
+              )}
+            </select>
+            
+            {/* Şablon Silme */}
+            {selectedTemplateId && (
+              <button
+                onClick={() => handleDeleteTemplate(selectedTemplateId)}
+                className="btn-secondary text-sm bg-red-500/20 hover:bg-red-500/30"
+                title="Şablonu Sil"
+              >
+                🗑️
+              </button>
+            )}
+            
             {selectedGroupsForMerge.length >= 2 && (
               <button
                 onClick={() => setShowMergeDialog(true)}
@@ -807,6 +1102,14 @@ export default function GiderRaporlari() {
                 🔗 Birleştir ({selectedGroupsForMerge.length})
               </button>
             )}
+            <button
+              onClick={() => setShowSaveTemplateDialog(true)}
+              className="btn-secondary text-sm"
+              disabled={groups.length === 0}
+              title="Mevcut yapılandırmayı şablon olarak kaydet"
+            >
+              💾 Formatı Kaydet
+            </button>
             <button
               onClick={handleAddGroup}
               className="btn-primary text-sm"
@@ -1027,39 +1330,46 @@ export default function GiderRaporlari() {
                       </button>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      {availableProperties && Array.isArray(availableProperties) && availableProperties.map((property: any) => {
-                        if (!property) return null
-                        
-                        const propertyIndex = property.Index || property.index
-                        const propertyName = property.Name || property.name || `Özellik ${propertyIndex}`
-                        const propertyValues = (property.Values || property.values || [])
-                        
-                        // propertyValues'in array olduğundan emin ol
-                        const safePropertyValues = Array.isArray(propertyValues) ? propertyValues : []
-                        
-                        if (!propertyIndex) return null
-                        
-                        return (
-                          <select
-                            key={propertyIndex}
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                handleAddPropertyFilter(groupIndex, itemIndex, propertyIndex, e.target.value)
-                                e.target.value = ''
-                              }
-                            }}
-                            className="input-field text-sm"
-                          >
-                            <option value="">{propertyName} seçin...</option>
-                            {safePropertyValues.map((value: string) => (
-                              <option key={value || `option-${Math.random()}`} value={value || ''}>{value || ''}</option>
-                            ))}
-                          </select>
-                        )
-                      })}
-                    </div>
+                    {/* Özellik dropdown'larını gizle: Eğer şablon yüklendiyse veya özellik seçildiyse */}
+                    {!selectedPropertyIndex && !selectedTemplateId && (
+                      <div className="flex flex-wrap gap-2">
+                        {availableProperties && Array.isArray(availableProperties) && availableProperties.map((property: any) => {
+                          if (!property) return null
+                          
+                          const propertyIndex = property.Index || property.index
+                          const propertyName = property.Name || property.name || `Özellik ${propertyIndex}`
+                          const propertyValues = (property.Values || property.values || [])
+                          
+                          // propertyValues'in array olduğundan emin ol
+                          const safePropertyValues = Array.isArray(propertyValues) ? propertyValues : []
+                          
+                          if (!propertyIndex) return null
+                          
+                          // Eğer bu item zaten bu özellik için bir filter'a sahipse, o özellik için dropdown gösterme
+                          const hasThisPropertyFilter = item.PropertyFilters?.some((f: any) => f.PropertyIndex === propertyIndex)
+                          if (hasThisPropertyFilter) return null
+                          
+                          return (
+                            <select
+                              key={propertyIndex}
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handleAddPropertyFilter(groupIndex, itemIndex, propertyIndex, e.target.value)
+                                  e.target.value = ''
+                                }
+                              }}
+                              className="input-field text-sm"
+                            >
+                              <option value="">{propertyName} seçin...</option>
+                              {safePropertyValues.map((value: string) => (
+                                <option key={value || `option-${Math.random()}`} value={value || ''}>{value || ''}</option>
+                              ))}
+                            </select>
+                          )
+                        })}
+                      </div>
+                    )}
 
                     {item.PropertyFilters && item.PropertyFilters.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">

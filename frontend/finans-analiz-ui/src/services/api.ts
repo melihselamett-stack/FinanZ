@@ -336,6 +336,13 @@ export interface AccountCodeOption {
   AccountName: string
 }
 
+export interface GiderRaporuTemplate {
+  Id: number
+  TemplateName: string
+  CreatedAt: string
+  UpdatedAt: string
+}
+
 export const giderRaporlariApi = {
   getAvailableProperties: (companyId: number) =>
     api.get<PropertyInfo[]>(`/giderraporlari/company/${companyId}/properties`),
@@ -353,6 +360,22 @@ export const giderRaporlariApi = {
   
   getConfig: (companyId: number) =>
     api.get<{ Groups: GiderRaporuGroup[] }>(`/giderraporlari/company/${companyId}/config`),
+  
+  // Şablon API'leri
+  getTemplates: (companyId: number) =>
+    api.get<GiderRaporuTemplate[]>(`/giderraporlari/company/${companyId}/templates`),
+  
+  saveTemplate: (companyId: number, templateName: string, groups: GiderRaporuGroup[]) =>
+    api.post<{ Id: number; TemplateName: string; Message: string }>(`/giderraporlari/company/${companyId}/templates`, {
+      TemplateName: templateName,
+      Groups: groups
+    }),
+  
+  loadTemplate: (companyId: number, templateId: number) =>
+    api.get<{ Groups: GiderRaporuGroup[] }>(`/giderraporlari/company/${companyId}/templates/${templateId}`),
+  
+  deleteTemplate: (companyId: number, templateId: number) =>
+    api.delete(`/giderraporlari/company/${companyId}/templates/${templateId}`),
 }
 
 export default api

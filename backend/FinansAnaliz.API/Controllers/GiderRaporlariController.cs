@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using FinansAnaliz.API.Data;
 using FinansAnaliz.API.DTOs;
+using FinansAnaliz.API.Models;
 
 namespace FinansAnaliz.API.Controllers;
 
@@ -442,6 +443,200 @@ public class GiderRaporlariController : ControllerBase
             Groups = new List<object>()
         });
     }
+
+    // Şablon Endpoint'leri
+    [HttpGet("company/{companyId}/templates")]
+    public async Task<ActionResult<object>> GetTemplates(int companyId)
+    {
+        if (!await UserOwnsCompany(companyId))
+            return Forbid();
+
+        try
+        {
+            var userId = GetUserId();
+            var templates = await _context.GiderRaporuTemplates
+                .Where(t => t.CompanyId == companyId && t.UserId == userId)
+                .OrderByDescending(t => t.UpdatedAt)
+                .Select(t => new
+                {
+                    Id = t.Id,
+                    TemplateName = t.TemplateName,
+                    CreatedAt = t.CreatedAt,
+                    UpdatedAt = t.UpdatedAt
+                })
+                .ToListAsync();
+
+            return Ok(templates);
+        }
+        catch (Microsoft.Data.SqlClient.SqlException sqlEx)
+        {
+            // Migration uygulanmamışsa boş liste döndür
+            if (sqlEx.Message.Contains("Invalid object name") || 
+                sqlEx.Message.Contains("GiderRaporuTemplates") ||
+                sqlEx.Number == 208) // SQL Server error 208 = Invalid object name
+            {
+                return Ok(new List<object>());
+            }
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Diğer exception'lar için de kontrol et
+            if (ex.Message.Contains("Invalid object name") || 
+                ex.Message.Contains("GiderRaporuTemplates") ||
+                ex.InnerException?.Message?.Contains("Invalid object name") == true ||
+                ex.InnerException?.Message?.Contains("GiderRaporuTemplates") == true)
+            {
+                return Ok(new List<object>());
+            }
+            throw;
+        }
+    }
+
+    [HttpPost("company/{companyId}/templates")]
+    public async Task<ActionResult<object>> SaveTemplate(int companyId, [FromBody] SaveTemplateRequest request)
+    {
+        if (!await UserOwnsCompany(companyId))
+            return Forbid();
+
+        if (string.IsNullOrWhiteSpace(request.TemplateName))
+            return BadRequest(new { message = "Şablon adı gereklidir" });
+
+        if (request.Groups == null || request.Groups.Count == 0)
+            return BadRequest(new { message = "En az bir grup gereklidir" });
+
+        try
+        {
+            var userId = GetUserId();
+            
+            // Aynı isimde şablon var mı kontrol et
+            var existingTemplate = await _context.GiderRaporuTemplates
+                .FirstOrDefaultAsync(t => t.CompanyId == companyId && 
+                                         t.UserId == userId && 
+                                         t.TemplateName == request.TemplateName);
+
+            var groupsJson = JsonSerializer.Serialize(request.Groups);
+
+            if (existingTemplate != null)
+            {
+                // Mevcut şablonu güncelle
+                existingTemplate.GroupsJson = groupsJson;
+                existingTemplate.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                
+                return Ok(new { 
+                    Id = existingTemplate.Id, 
+                    TemplateName = existingTemplate.TemplateName,
+                    Message = "Şablon güncellendi"
+                });
+            }
+            else
+            {
+                // Yeni şablon oluştur
+                var template = new GiderRaporuTemplate
+                {
+                    CompanyId = companyId,
+                    UserId = userId,
+                    TemplateName = request.TemplateName,
+                    GroupsJson = groupsJson,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.GiderRaporuTemplates.Add(template);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { 
+                    Id = template.Id, 
+                    TemplateName = template.TemplateName,
+                    Message = "Şablon kaydedildi"
+                });
+            }
+        }
+        catch (Microsoft.Data.SqlClient.SqlException sqlEx)
+        {
+            // Migration uygulanmamışsa bilgilendirici hata döndür
+            if (sqlEx.Message.Contains("Invalid object name") || 
+                sqlEx.Message.Contains("GiderRaporuTemplates") ||
+                sqlEx.Number == 208) // SQL Server error 208 = Invalid object name
+            {
+                return StatusCode(500, new { 
+                    message = "Şablon tablosu bulunamadı. Lütfen migration'ı uygulayın: dotnet ef database update veya SQL script'i çalıştırın.",
+                    details = sqlEx.Message
+                });
+            }
+            // Diğer SQL hatalarını logla ve fırlat
+            Console.WriteLine($"SQL Exception in SaveTemplate: {sqlEx.Message}");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Tüm exception'ları logla
+            Console.WriteLine($"Exception in SaveTemplate: {ex.Message}");
+            Console.WriteLine($"Inner Exception: {ex.InnerException?.Message}");
+            Console.WriteLine($"Stack Trace: {ex.StackTrace}");
+            
+            // Diğer exception'lar için de kontrol et
+            var errorMessage = ex.Message + (ex.InnerException != null ? " | Inner: " + ex.InnerException.Message : "");
+            if (errorMessage.Contains("Invalid object name") || 
+                errorMessage.Contains("GiderRaporuTemplates") ||
+                errorMessage.Contains("does not exist"))
+            {
+                return StatusCode(500, new { 
+                    message = "Şablon tablosu bulunamadı. Lütfen migration'ı uygulayın: dotnet ef database update veya SQL script'i çalıştırın.",
+                    details = errorMessage
+                });
+            }
+            throw;
+        }
+    }
+
+    [HttpGet("company/{companyId}/templates/{templateId}")]
+    public async Task<ActionResult<object>> LoadTemplate(int companyId, int templateId)
+    {
+        if (!await UserOwnsCompany(companyId))
+            return Forbid();
+
+        var userId = GetUserId();
+        var template = await _context.GiderRaporuTemplates
+            .FirstOrDefaultAsync(t => t.Id == templateId && 
+                                     t.CompanyId == companyId && 
+                                     t.UserId == userId);
+
+        if (template == null)
+            return NotFound(new { message = "Şablon bulunamadı" });
+
+        try
+        {
+            var groups = JsonSerializer.Deserialize<List<GiderRaporuGroup>>(template.GroupsJson);
+            return Ok(new { Groups = groups });
+        }
+        catch (JsonException)
+        {
+            return BadRequest(new { message = "Şablon verisi geçersiz" });
+        }
+    }
+
+    [HttpDelete("company/{companyId}/templates/{templateId}")]
+    public async Task<ActionResult> DeleteTemplate(int companyId, int templateId)
+    {
+        if (!await UserOwnsCompany(companyId))
+            return Forbid();
+
+        var userId = GetUserId();
+        var template = await _context.GiderRaporuTemplates
+            .FirstOrDefaultAsync(t => t.Id == templateId && 
+                                     t.CompanyId == companyId && 
+                                     t.UserId == userId);
+
+        if (template == null)
+            return NotFound(new { message = "Şablon bulunamadı" });
+
+        _context.GiderRaporuTemplates.Remove(template);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Şablon silindi" });
+    }
 }
 
 public class GiderRaporuRequest
@@ -471,5 +666,11 @@ public class PropertyFilter
 
 public class GiderRaporuConfigRequest
 {
+    public List<GiderRaporuGroup> Groups { get; set; } = new();
+}
+
+public class SaveTemplateRequest
+{
+    public string TemplateName { get; set; } = string.Empty;
     public List<GiderRaporuGroup> Groups { get; set; } = new();
 }
