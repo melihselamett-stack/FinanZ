@@ -351,6 +351,10 @@ export const giderRaporlariApi = {
     const params = search && search.trim() ? { search: search.trim() } : {}
     return api.get<AccountCodeOption[]>(`/giderraporlari/company/${companyId}/account-codes`, { params })
   },
+  getAccountCodesByProperty: (companyId: number, propertyIndex: number, propertyValue: string) =>
+    api.get<AccountCodeOption[]>(`/giderraporlari/company/${companyId}/account-codes-by-property`, {
+      params: { propertyIndex, propertyValue }
+    }),
   
   getGiderRaporu: (companyId: number, year: number, groups: GiderRaporuGroup[]) =>
     api.post<GiderRaporuData>(`/giderraporlari/company/${companyId}/report`, { Groups: groups }, { params: { year } }),
@@ -386,6 +390,10 @@ export const gelirRaporlariApi = {
     const params = search && search.trim() ? { search: search.trim() } : {}
     return api.get<AccountCodeOption[]>(`/gelirraporlari/company/${companyId}/account-codes`, { params })
   },
+  getAccountCodesByProperty: (companyId: number, propertyIndex: number, propertyValue: string) =>
+    api.get<AccountCodeOption[]>(`/gelirraporlari/company/${companyId}/account-codes-by-property`, {
+      params: { propertyIndex, propertyValue }
+    }),
   getGelirRaporu: (companyId: number, year: number, groups: GiderRaporuGroup[]) =>
     api.post<GiderRaporuData>(`/gelirraporlari/company/${companyId}/report`, { Groups: groups }, { params: { year } }),
   saveConfig: (companyId: number, groups: GiderRaporuGroup[]) =>

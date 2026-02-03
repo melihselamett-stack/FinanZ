@@ -22,6 +22,7 @@ export default function GiderRaporlari() {
   const [accountCodesLoading, setAccountCodesLoading] = useState<{ [key: string]: boolean }>({})
   const accountCodeDropdownRef = useRef<{ [key: string]: HTMLDivElement | null }>({})
   const searchTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout | null }>({})
+  const requestedPropertyKeysRef = useRef<Set<string>>(new Set())
   
   // Özelliklere Göre Rapor
   const [showPropertySelector, setShowPropertySelector] = useState(false)
@@ -42,6 +43,9 @@ export default function GiderRaporlari() {
   
   // Rapor Yapılandırması görünürlüğü
   const [showReportConfiguration, setShowReportConfiguration] = useState(true)
+  // Özellik etiketlerinde gösterilecek muhasebe (hesap) kodları: key = "companyId-propertyIndex-propertyValue"
+  const [accountCodesByProperty, setAccountCodesByProperty] = useState<{ [key: string]: AccountCodeOption[] }>({})
+  const [accountCodesByPropertyLoading, setAccountCodesByPropertyLoading] = useState<{ [key: string]: boolean }>({})
 
   const months = [
     'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
@@ -85,6 +89,41 @@ export default function GiderRaporlari() {
       })
     }
   }, [showAccountCodeDropdown])
+
+  // Özellik etiketleri için muhasebe kodlarını yükle (her benzersiz propertyIndex+propertyValue için)
+  useEffect(() => {
+    if (!selectedCompanyId || !groups?.length) return
+    const keysToFetch: { key: string; propertyIndex: number; propertyValue: string }[] = []
+    groups.forEach(g => {
+      g.Items?.forEach(item => {
+        item.PropertyFilters?.forEach((f: any) => {
+          const pi = typeof f.PropertyIndex !== 'undefined' ? Number(f.PropertyIndex) : Number(f.propertyIndex)
+          const pv = (f.PropertyValue ?? f.propertyValue ?? '').toString().trim()
+          if (!pv || isNaN(pi)) return
+          const key = `${selectedCompanyId}-${pi}-${pv}`
+          if (!requestedPropertyKeysRef.current.has(key)) {
+            requestedPropertyKeysRef.current.add(key)
+            keysToFetch.push({ key, propertyIndex: pi, propertyValue: pv })
+          }
+        })
+      })
+    })
+    keysToFetch.forEach(({ key, propertyIndex, propertyValue }) => {
+      setAccountCodesByPropertyLoading(prev => ({ ...prev, [key]: true }))
+      giderRaporlariApi.getAccountCodesByProperty(selectedCompanyId, propertyIndex, propertyValue)
+        .then(res => {
+          const list = Array.isArray(res.data) ? res.data : []
+          setAccountCodesByProperty(prev => ({ ...prev, [key]: list }))
+        })
+        .catch(() => setAccountCodesByProperty(prev => ({ ...prev, [key]: [] })))
+        .finally(() => setAccountCodesByPropertyLoading(prev => ({ ...prev, [key]: false })))
+    })
+  }, [selectedCompanyId, groups])
+
+  // Şirket değişince özellik hesap kodu isteklerini sıfırla
+  useEffect(() => {
+    requestedPropertyKeysRef.current.clear()
+  }, [selectedCompanyId])
 
   const loadCompanies = async () => {
     try {
@@ -1395,13 +1434,30 @@ export default function GiderRaporlari() {
                     {item.PropertyFilters && item.PropertyFilters.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {item.PropertyFilters.map((filter, filterIndex) => {
-                          const property = availableProperties.find(p => p.Index === filter.PropertyIndex)
+                          const pi = typeof filter.PropertyIndex !== 'undefined' ? Number(filter.PropertyIndex) : Number((filter as any).propertyIndex)
+                          const pv = (filter.PropertyValue ?? (filter as any).propertyValue ?? '').toString().trim()
+                          const property = availableProperties.find(p => p.Index === pi || p.Index === filter.PropertyIndex)
+                          const propKey = selectedCompanyId && pv ? `${selectedCompanyId}-${pi}-${pv}` : ''
+                          const codes = propKey ? (accountCodesByProperty[propKey] || []) : []
+                          const loading = propKey ? (accountCodesByPropertyLoading[propKey] ?? false) : false
+                          const codeLabels = codes.map(c => c.AccountCode || (c as any).accountCode || '').filter(Boolean)
                           return (
                             <span
                               key={filterIndex}
-                              className="px-2 py-1 bg-primary-500/20 text-primary-300 rounded text-xs flex items-center gap-1"
+                              className="px-2 py-1 bg-primary-500/20 text-primary-300 rounded text-xs flex items-center gap-1 flex-wrap"
                             >
-                              {property?.Name}: {filter.PropertyValue}
+                              <span>
+                                {property?.Name ?? 'Özellik'}: {pv || filter.PropertyValue}
+                                {loading && <span className="ml-1 text-gray-500 italic">yükleniyor...</span>}
+                                {!loading && codeLabels.length > 0 && (
+                                  <span className="ml-1 text-gray-400 font-mono">
+                                    ({codeLabels.join(', ')})
+                                  </span>
+                                )}
+                                {!loading && propKey && codes.length === 0 && (
+                                  <span className="ml-1 text-gray-500 italic">hesap kodu yok</span>
+                                )}
+                              </span>
                               <button
                                 onClick={() => handleRemovePropertyFilter(groupIndex, itemIndex, filterIndex)}
                                 className="text-red-400 hover:text-red-300"

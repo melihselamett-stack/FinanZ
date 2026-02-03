@@ -227,6 +227,39 @@ public class GiderRaporlariController : ControllerBase
         return Ok(allAccounts);
     }
 
+    /// <summary>
+    /// Özellik değerine (örn. "%5 SGK İndirimi") uyan 7'li hesap kodlarını döndürür.
+    /// Değer mizanda hangi özellik sütununda (Property1-5) olursa olsun tüm eşleşen hesapları getirir.
+    /// </summary>
+    [HttpGet("company/{companyId}/account-codes-by-property")]
+    public async Task<ActionResult<object>> GetAccountCodesByProperty(
+        int companyId,
+        [FromQuery] int propertyIndex,
+        [FromQuery] string? propertyValue = null)
+    {
+        if (!await UserOwnsCompany(companyId))
+            return Forbid();
+        propertyValue = propertyValue?.Trim();
+        if (string.IsNullOrWhiteSpace(propertyValue))
+            return Ok(new List<object>());
+
+        // Özellik değerini Property1-5 içinde ara; mizanda hangi sütunda geliyorsa o hesapları getir
+        var list = await _context.AccountPlans
+            .Where(a => a.CompanyId == companyId && a.IsLeaf == true && a.AccountCode.StartsWith("7") &&
+                (a.Property1 != null && a.Property1.Trim() == propertyValue ||
+                 a.Property2 != null && a.Property2.Trim() == propertyValue ||
+                 a.Property3 != null && a.Property3.Trim() == propertyValue ||
+                 a.Property4 != null && a.Property4.Trim() == propertyValue ||
+                 a.Property5 != null && a.Property5.Trim() == propertyValue))
+            .Select(a => new { AccountCode = a.AccountCode, AccountName = a.AccountName })
+            .Distinct()
+            .OrderBy(a => a.AccountCode)
+            .Take(50)
+            .ToListAsync();
+
+        return Ok(list);
+    }
+
     [HttpPost("company/{companyId}/report")]
     public async Task<ActionResult<object>> GetGiderRaporu(
         int companyId,
