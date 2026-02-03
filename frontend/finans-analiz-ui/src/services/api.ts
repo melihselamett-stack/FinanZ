@@ -378,5 +378,32 @@ export const giderRaporlariApi = {
     api.delete(`/giderraporlari/company/${companyId}/templates/${templateId}`),
 }
 
+// Gelir Raporları (6'lı hesaplar) - aynı DTO'lar kullanılır
+export const gelirRaporlariApi = {
+  getAvailableProperties: (companyId: number) =>
+    api.get<PropertyInfo[]>(`/gelirraporlari/company/${companyId}/properties`),
+  getAccountCodes: (companyId: number, search?: string) => {
+    const params = search && search.trim() ? { search: search.trim() } : {}
+    return api.get<AccountCodeOption[]>(`/gelirraporlari/company/${companyId}/account-codes`, { params })
+  },
+  getGelirRaporu: (companyId: number, year: number, groups: GiderRaporuGroup[]) =>
+    api.post<GiderRaporuData>(`/gelirraporlari/company/${companyId}/report`, { Groups: groups }, { params: { year } }),
+  saveConfig: (companyId: number, groups: GiderRaporuGroup[]) =>
+    api.post(`/gelirraporlari/company/${companyId}/save-config`, { Groups: groups }),
+  getConfig: (companyId: number) =>
+    api.get<{ Groups: GiderRaporuGroup[] }>(`/gelirraporlari/company/${companyId}/config`),
+  getTemplates: (companyId: number) =>
+    api.get<GiderRaporuTemplate[]>(`/gelirraporlari/company/${companyId}/templates`),
+  saveTemplate: (companyId: number, templateName: string, groups: GiderRaporuGroup[]) =>
+    api.post<{ Id: number; TemplateName: string; Message: string }>(`/gelirraporlari/company/${companyId}/templates`, {
+      TemplateName: templateName,
+      Groups: groups
+    }),
+  loadTemplate: (companyId: number, templateId: number) =>
+    api.get<{ Groups: GiderRaporuGroup[] }>(`/gelirraporlari/company/${companyId}/templates/${templateId}`),
+  deleteTemplate: (companyId: number, templateId: number) =>
+    api.delete(`/gelirraporlari/company/${companyId}/templates/${templateId}`),
+}
+
 export default api
 

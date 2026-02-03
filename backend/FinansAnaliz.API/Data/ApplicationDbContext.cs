@@ -17,6 +17,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UserSubscription> UserSubscriptions { get; set; }
     public DbSet<PropertyOption> PropertyOptions { get; set; }
     public DbSet<GiderRaporuTemplate> GiderRaporuTemplates { get; set; }
+    public DbSet<GelirRaporuTemplate> GelirRaporuTemplates { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -136,6 +137,25 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
                 
+            entity.HasIndex(e => new { e.CompanyId, e.TemplateName }).IsUnique();
+        });
+
+        builder.Entity<GelirRaporuTemplate>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TemplateName).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.GroupsJson).HasColumnType("nvarchar(max)");
+
+            entity.HasOne(e => e.Company)
+                .WithMany()
+                .HasForeignKey(e => e.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             entity.HasIndex(e => new { e.CompanyId, e.TemplateName }).IsUnique();
         });
 

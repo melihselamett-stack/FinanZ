@@ -10,6 +10,7 @@ import ConsolidatedMizan from './pages/ConsolidatedMizan'
 import BilancoRaporlari from './pages/BilancoRaporlari'
 import GelirTablosuRaporlari from './pages/GelirTablosuRaporlari'
 import GiderRaporlari from './pages/GiderRaporlari'
+import GelirRaporlari from './pages/GelirRaporlari'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -43,6 +44,7 @@ function App() {
         <Route path="consolidated-mizan" element={<ConsolidatedMizan />} />
         <Route path="bilanco-raporlari" element={<BilancoRaporlari />} />
         <Route path="gelir-tablosu-raporlari" element={<GelirTablosuRaporlari />} />
+        <Route path="gelir-raporlari" element={<GelirRaporlari />} />
         <Route path="gider-raporlari" element={<GiderRaporlari />} />
       </Route>
     </Routes>

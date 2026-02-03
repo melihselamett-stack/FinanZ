@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
-import { companyApi, giderRaporlariApi, Company, PropertyInfo, GiderRaporuItem, GiderRaporuGroup, GiderRaporuData, AccountCodeOption, GiderRaporuTemplate } from '../services/api'
+import { companyApi, gelirRaporlariApi, Company, PropertyInfo, GiderRaporuItem, GiderRaporuGroup, GiderRaporuData, AccountCodeOption, GiderRaporuTemplate } from '../services/api'
 import * as XLSX from 'xlsx'
 
-export default function GiderRaporlari() {
+export default function GelirRaporlari() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
@@ -59,7 +59,7 @@ export default function GiderRaporlari() {
       loadAvailableProperties(selectedCompanyId)
       loadTemplates(selectedCompanyId)
       if (groups.length > 0) {
-        loadGiderRaporuData(selectedCompanyId, selectedYear)
+        loadGelirRaporuData(selectedCompanyId, selectedYear)
       }
     }
   }, [selectedCompanyId, selectedYear, companies])
@@ -105,7 +105,7 @@ export default function GiderRaporlari() {
     setError(null)
     try {
       console.log('Özellikler yükleniyor, companyId:', companyId)
-      const response = await giderRaporlariApi.getAvailableProperties(companyId)
+      const response = await gelirRaporlariApi.getAvailableProperties(companyId)
       console.log('Özellikler yüklendi - response:', response)
       console.log('Özellikler yüklendi - data:', response.data)
       console.log('Özellikler yüklendi - type:', typeof response.data, Array.isArray(response.data))
@@ -137,7 +137,7 @@ export default function GiderRaporlari() {
     setError(null)
     
     try {
-      const response = await giderRaporlariApi.getAvailableProperties(selectedCompanyId)
+      const response = await gelirRaporlariApi.getAvailableProperties(selectedCompanyId)
       console.log('Özellik seçildi - response:', response)
       console.log('Özellik seçildi - propertyIndex:', propertyIndex)
       
@@ -183,7 +183,7 @@ export default function GiderRaporlari() {
           setTimeout(() => {
             console.log('Rapor yükleniyor - companyId:', selectedCompanyId, 'year:', selectedYear, 'groups:', newGroups.length)
             // Yeni gruplarla direkt raporu yükle
-            loadGiderRaporuData(selectedCompanyId, selectedYear, newGroups)
+            loadGelirRaporuData(selectedCompanyId, selectedYear, newGroups)
           }, 300)
         }
       } else {
@@ -201,7 +201,7 @@ export default function GiderRaporlari() {
   const loadAccountCodes = async (companyId: number, key: string, search?: string) => {
     try {
       setAccountCodesLoading(prev => ({ ...prev, [key]: true }))
-      const response = await giderRaporlariApi.getAccountCodes(companyId, search)
+      const response = await gelirRaporlariApi.getAccountCodes(companyId, search)
       const codes = Array.isArray(response.data) ? response.data : []
       setAccountCodes(prev => ({ ...prev, [key]: codes }))
     } catch (error) {
@@ -216,7 +216,7 @@ export default function GiderRaporlari() {
     try {
       setTemplatesLoading(true)
       console.log('Şablonlar yükleniyor - companyId:', companyId)
-      const response = await giderRaporlariApi.getTemplates(companyId)
+      const response = await gelirRaporlariApi.getTemplates(companyId)
       console.log('Şablonlar yüklendi - response:', response)
       console.log('Şablonlar yüklendi - response.data:', response.data)
       console.log('Şablonlar yüklendi - response.data type:', typeof response.data, Array.isArray(response.data))
@@ -271,7 +271,7 @@ export default function GiderRaporlari() {
     }
 
     try {
-      const response = await giderRaporlariApi.saveTemplate(selectedCompanyId, templateName.trim(), groups)
+      const response = await gelirRaporlariApi.saveTemplate(selectedCompanyId, templateName.trim(), groups)
       console.log('Şablon kaydedildi - response:', response.data)
       setShowSaveTemplateDialog(false)
       setTemplateName('')
@@ -309,7 +309,7 @@ export default function GiderRaporlari() {
     console.log('Şablon yükleniyor - templateId:', templateId, 'companyId:', selectedCompanyId)
     
     try {
-      const response = await giderRaporlariApi.loadTemplate(selectedCompanyId, templateId)
+      const response = await gelirRaporlariApi.loadTemplate(selectedCompanyId, templateId)
       console.log('Şablon yüklendi - response:', response)
       console.log('Şablon yüklendi - response.data:', response.data)
       
@@ -349,7 +349,7 @@ export default function GiderRaporlari() {
         // Şablon yüklendikten sonra raporu yükle
         setTimeout(() => {
           console.log('Rapor yükleniyor - groups:', normalizedGroups.length)
-          loadGiderRaporuData(selectedCompanyId, selectedYear, normalizedGroups)
+          loadGelirRaporuData(selectedCompanyId, selectedYear, normalizedGroups)
         }, 200)
       } else {
         console.warn('Şablon yüklendi ama grup bulunamadı')
@@ -367,7 +367,7 @@ export default function GiderRaporlari() {
     if (!confirm('Bu şablonu silmek istediğinizden emin misiniz?')) return
 
     try {
-      await giderRaporlariApi.deleteTemplate(selectedCompanyId, templateId)
+      await gelirRaporlariApi.deleteTemplate(selectedCompanyId, templateId)
       await loadTemplates(selectedCompanyId)
       if (selectedTemplateId === templateId) {
         setSelectedTemplateId(null)
@@ -408,7 +408,7 @@ export default function GiderRaporlari() {
     setAccountCodeSearch(prev => ({ ...prev, [key]: '' }))
   }
 
-  const loadGiderRaporuData = async (companyId: number, year: number, customGroups?: GiderRaporuGroup[]) => {
+  const loadGelirRaporuData = async (companyId: number, year: number, customGroups?: GiderRaporuGroup[]) => {
     const groupsToUse = customGroups || groups
     
     if (groupsToUse.length === 0) {
@@ -420,7 +420,7 @@ export default function GiderRaporlari() {
     setError(null)
     try {
       console.log('Rapor yükleniyor - groupsToUse length:', groupsToUse.length, 'groups:', groupsToUse)
-      const response = await giderRaporlariApi.getGiderRaporu(companyId, year, groupsToUse)
+      const response = await gelirRaporlariApi.getGelirRaporu(companyId, year, groupsToUse)
       const responseData = response.data as any
       
       setData({
@@ -463,7 +463,7 @@ export default function GiderRaporlari() {
       setGroups(newGroups)
       setSelectedGroupsForMerge([])
       if (selectedCompanyId) {
-        loadGiderRaporuData(selectedCompanyId, selectedYear)
+        loadGelirRaporuData(selectedCompanyId, selectedYear)
       }
     }
   }
@@ -523,7 +523,7 @@ export default function GiderRaporlari() {
     setMergeGroupName('')
     
     if (selectedCompanyId) {
-      loadGiderRaporuData(selectedCompanyId, selectedYear)
+      loadGelirRaporuData(selectedCompanyId, selectedYear)
     }
   }
 
@@ -544,7 +544,7 @@ export default function GiderRaporlari() {
       newGroups[groupIndex].Items = newGroups[groupIndex].Items.filter((_, idx) => idx !== itemIndex)
       setGroups(newGroups)
       if (selectedCompanyId) {
-        loadGiderRaporuData(selectedCompanyId, selectedYear)
+        loadGelirRaporuData(selectedCompanyId, selectedYear)
       }
     }
   }
@@ -612,7 +612,7 @@ export default function GiderRaporlari() {
     setDraggedItem(null)
     
     if (selectedCompanyId) {
-      loadGiderRaporuData(selectedCompanyId, selectedYear)
+      loadGelirRaporuData(selectedCompanyId, selectedYear)
     }
   }
 
@@ -649,7 +649,7 @@ export default function GiderRaporlari() {
     setDraggedGroup(null)
     
     if (selectedCompanyId) {
-      loadGiderRaporuData(selectedCompanyId, selectedYear)
+      loadGelirRaporuData(selectedCompanyId, selectedYear)
     }
   }
 
@@ -785,7 +785,7 @@ export default function GiderRaporlari() {
       XLSX.utils.book_append_sheet(wb, ws, group.Name || `Grup ${groupIndex + 1}`)
     })
 
-    const fileName = `Gider_Raporu_${selectedCompany?.companyName || 'Rapor'}_${data.year}.xlsx`
+    const fileName = `Gelir_Raporu_${selectedCompany?.companyName || 'Rapor'}_${data.year}.xlsx`
     XLSX.writeFile(wb, fileName)
   }
 
@@ -801,8 +801,8 @@ export default function GiderRaporlari() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Gider Raporları</h1>
-          <p className="text-gray-400 mt-1">Özelleştirilebilir gider raporları oluşturun</p>
+          <h1 className="text-2xl font-bold text-white">Gelir Raporları</h1>
+          <p className="text-gray-400 mt-1">Özelleştirilebilir gelir raporları oluşturun (6'lı hesaplar)</p>
         </div>
         <div className="flex items-center gap-4">
           <select
@@ -839,7 +839,7 @@ export default function GiderRaporlari() {
             📊 Özelliklere Göre
           </button>
           <button
-            onClick={() => selectedCompanyId && loadGiderRaporuData(selectedCompanyId, selectedYear)}
+            onClick={() => selectedCompanyId && loadGelirRaporuData(selectedCompanyId, selectedYear)}
             className="btn-secondary"
             disabled={groups.length === 0}
           >
