@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { companyApi, gelirRaporlariApi, Company, PropertyInfo, GiderRaporuItem, GiderRaporuGroup, GiderRaporuData, AccountCodeOption, GiderRaporuTemplate } from '../services/api'
+import { companyApi, gelirRaporlariApi, mizanApi, Company, PropertyInfo, GiderRaporuItem, GiderRaporuGroup, GiderRaporuData, AccountCodeOption, GiderRaporuTemplate } from '../services/api'
 import * as XLSX from 'xlsx'
 
 export default function GelirRaporlari() {
@@ -11,6 +11,11 @@ export default function GelirRaporlari() {
   const [dataLoading, setDataLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
+  const [compareYears, setCompareYears] = useState(false)
+  const [compareYear1, setCompareYear1] = useState<number>(new Date().getFullYear())
+  const [compareYear2, setCompareYear2] = useState<number>(new Date().getFullYear() - 1)
+  const [availableYears, setAvailableYears] = useState<number[]>([])
+  const [multiYearData, setMultiYearData] = useState<[GiderRaporuData, GiderRaporuData] | null>(null)
   
   const [availableProperties, setAvailableProperties] = useState<PropertyInfo[]>([])
   const [groups, setGroups] = useState<GiderRaporuGroup[]>([])
@@ -61,11 +66,19 @@ export default function GelirRaporlari() {
       setSelectedCompany(company || null)
       loadAvailableProperties(selectedCompanyId)
       loadTemplates(selectedCompanyId)
-      if (groups.length > 0) {
+      if (groups.length > 0 && !compareYears) {
         loadGelirRaporuData(selectedCompanyId, selectedYear)
       }
+      mizanApi.getPeriods(selectedCompanyId).then(res => {
+        const years = [...new Set((res.data || []).map((p: { year: number }) => p.year))].sort((a, b) => b - a)
+        setAvailableYears(years.length > 0 ? years : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i))
+      }).catch(() => setAvailableYears(Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)))
     }
-  }, [selectedCompanyId, selectedYear, companies])
+  }, [selectedCompanyId, selectedYear, companies, compareYears])
+
+  useEffect(() => {
+    if (!compareYears) setMultiYearData(null)
+  }, [compareYears])
 
   useEffect(() => {
     // Dropdown dışına tıklanınca kapat
@@ -444,6 +457,39 @@ export default function GelirRaporlari() {
     setAccountCodeSearch(prev => ({ ...prev, [key]: '' }))
   }
 
+  const loadCompareYears = async () => {
+    if (!selectedCompanyId || groups.length === 0 || compareYear1 === compareYear2) return
+    setDataLoading(true)
+    setError(null)
+    setMultiYearData(null)
+    try {
+      const [res1, res2] = await Promise.all([
+        gelirRaporlariApi.getGelirRaporu(selectedCompanyId, compareYear1, groups),
+        gelirRaporlariApi.getGelirRaporu(selectedCompanyId, compareYear2, groups)
+      ])
+      const toData = (responseData: any, year: number): GiderRaporuData => ({
+        year: responseData.Year ?? responseData.year ?? year,
+        periods: responseData.Periods ?? responseData.periods ?? [],
+        groups: (responseData.Groups ?? responseData.groups ?? []).map((group: any) => ({
+          Name: group.Name ?? group.name ?? '',
+          DisplayOrder: group.DisplayOrder ?? group.displayOrder ?? 0,
+          Items: (group.Items ?? group.items ?? []).map((item: any) => ({
+            Name: item.Name ?? item.name ?? '',
+            PropertyFilters: item.PropertyFilters ?? item.propertyFilters,
+            AccountCodePrefix: item.AccountCodePrefix ?? item.accountCodePrefix,
+            Values: item.Values ?? item.values ?? {}
+          })),
+          Total: group.Total ?? group.total ?? {}
+        }))
+      })
+      setMultiYearData([toData(res1.data, compareYear1), toData(res2.data, compareYear2)])
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Karşılaştırma yüklenirken hata oluştu')
+    } finally {
+      setDataLoading(false)
+    }
+  }
+
   const loadGelirRaporuData = async (companyId: number, year: number, customGroups?: GiderRaporuGroup[]) => {
     const groupsToUse = customGroups || groups
     
@@ -697,6 +743,64 @@ export default function GelirRaporlari() {
     }).format(value)
   }
 
+  const renderRaporCompare = () => {
+    if (!multiYearData || multiYearData[0].groups.length === 0) return null
+    const [d1, d2] = multiYearData
+    return (
+      <div className="space-y-6">
+        {d1.groups.map((group1, gi) => {
+          const group2 = d2.groups[gi]
+          if (!group2) return null
+          const map2 = new Map<string, GiderRaporuItem>()
+          group2.Items.forEach(it => map2.set(it.Name, it))
+          const merged = group1.Items.map(it1 => ({ it1, it2: map2.get(it1.Name) }))
+          return (
+            <div key={gi} className="card">
+              <h3 className="text-lg font-bold text-white mb-4">{group1.Name}</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse table-fixed min-w-[500px]">
+                  <colgroup>
+                    <col className="w-[300px]" />
+                    <col className="w-[120px]" />
+                    <col className="w-[120px]" />
+                  </colgroup>
+                  <thead>
+                    <tr className="bg-gray-800 text-gray-300">
+                      <th className="py-2 px-3 text-left border border-gray-700">Kalem Adı</th>
+                      <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d1.year} Toplam TL</th>
+                      <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d2.year} Toplam TL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {merged.map(({ it1, it2 }, ii) => {
+                      const v2 = it2?.Values ?? {}
+                      const total1 = it1.Values?.Total ?? 0
+                      const total2 = v2.Total ?? 0
+                      return (
+                        <tr key={ii} className="hover:bg-gray-900/50">
+                          <td className="py-2 px-3 border border-gray-700 text-white truncate" title={it1.Name}>{it1.Name}</td>
+                          <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total1 < 0 ? 'text-red-400' : 'text-gray-300'}`}>{formatBalance(total1)}</td>
+                          <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total2 < 0 ? 'text-red-400' : 'text-gray-300'}`}>{formatBalance(total2)}</td>
+                        </tr>
+                      )
+                    })}
+                    {group1.Total && group2.Total && (
+                      <tr className="bg-yellow-500/30 font-bold">
+                        <td className="py-2 px-3 border border-gray-700 text-yellow-200">TOPLAM</td>
+                        <td className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200">{formatBalance(group1.Total.Total ?? 0)}</td>
+                        <td className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200">{formatBalance(group2.Total.Total ?? 0)}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   const renderRapor = () => {
     if (!data || !data.groups || data.groups.length === 0) return null
 
@@ -853,15 +957,39 @@ export default function GelirRaporlari() {
               </option>
             ))}
           </select>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-            className="input-field"
-          >
-            {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(year => (
-              <option key={year} value={year}>{year}</option>
-            ))}
-          </select>
+          {!compareYears && (
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="input-field"
+            >
+              {(availableYears.length > 0 ? availableYears : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)).map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          )}
+          <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
+            <input type="checkbox" checked={compareYears} onChange={(e) => setCompareYears(e.target.checked)} className="rounded border-gray-600" />
+            <span className="text-sm">Yılları karşılaştır</span>
+          </label>
+          {compareYears && (
+            <>
+              <select value={compareYear1} onChange={(e) => setCompareYear1(Number(e.target.value))} className="input-field w-auto">
+                {(availableYears.length > 0 ? availableYears : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <span className="text-gray-500">vs</span>
+              <select value={compareYear2} onChange={(e) => setCompareYear2(Number(e.target.value))} className="input-field w-auto">
+                {(availableYears.length > 0 ? availableYears : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <button type="button" onClick={loadCompareYears} disabled={compareYear1 === compareYear2 || groups.length === 0 || dataLoading} className="btn-primary">
+                {dataLoading ? 'Yükleniyor...' : 'Karşılaştırmayı Yükle'}
+              </button>
+            </>
+          )}
           <button
             onClick={async () => {
               if (selectedCompanyId) {
@@ -875,13 +1003,13 @@ export default function GelirRaporlari() {
             📊 Özelliklere Göre
           </button>
           <button
-            onClick={() => selectedCompanyId && loadGelirRaporuData(selectedCompanyId, selectedYear)}
+            onClick={() => compareYears && selectedCompanyId ? loadCompareYears() : selectedCompanyId && loadGelirRaporuData(selectedCompanyId, selectedYear)}
             className="btn-secondary"
             disabled={groups.length === 0}
           >
             🔄 Raporu Yükle
           </button>
-          {data && data.groups && data.groups.length > 0 && (
+          {((data && data.groups && data.groups.length > 0) || (multiYearData && multiYearData[0].groups.length > 0)) && (
             <button
               onClick={exportToExcel}
               className="btn-primary"
@@ -1487,6 +1615,8 @@ export default function GelirRaporlari() {
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
         </div>
+      ) : multiYearData ? (
+        renderRaporCompare()
       ) : data && data.groups && data.groups.length > 0 ? (
         renderRapor()
       ) : groups.length > 0 ? (

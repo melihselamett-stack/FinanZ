@@ -81,34 +81,30 @@ public class BilancoController : ControllerBase
 
         // VARLIKLAR bölümü
         var varliklarList = new List<object>();
-        
-        // DURAN VARLIKLAR başlığı
-        varliklarList.Add(new { Name = "DURAN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
-        
+
         // DURAN VARLIKLAR alt kalemleri (L1 kodlarına göre grupla)
         var duranVarliklar = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "2" });
-        foreach (var item in duranVarliklar)
+        var duranDetaylar = duranVarliklar.Where(i => !IsSectionHeaderNameRow(i, "DURAN VARLIKLAR")).ToList();
+        if (duranDetaylar.Count == 0)
+            varliklarList.Add(new { Name = "DURAN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        else
         {
-            varliklarList.Add(item);
-        }
-        if (duranVarliklar.Count > 0)
-        {
-            var duranToplam = CalculateSectionTotal(duranVarliklar.Cast<object>().ToList(), allPeriods);
+            foreach (var item in duranDetaylar)
+                varliklarList.Add(item);
+            var duranToplam = CalculateSectionTotal(duranDetaylar.Cast<object>().ToList(), allPeriods);
             varliklarList.Add(new { Name = "DURAN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = duranToplam });
         }
 
-        // DÖNEN VARLIKLAR başlığı
-        varliklarList.Add(new { Name = "DÖNEN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
-        
         // DÖNEN VARLIKLAR alt kalemleri (L1 kodlarına göre grupla)
         var donenVarliklar = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "1" });
-        foreach (var item in donenVarliklar)
+        var donenDetaylar = donenVarliklar.Where(i => !IsSectionHeaderNameRow(i, "DÖNEN VARLIKLAR")).ToList();
+        if (donenDetaylar.Count == 0)
+            varliklarList.Add(new { Name = "DÖNEN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        else
         {
-            varliklarList.Add(item);
-        }
-        if (donenVarliklar.Count > 0)
-        {
-            var donenToplam = CalculateSectionTotal(donenVarliklar.Cast<object>().ToList(), allPeriods);
+            foreach (var item in donenDetaylar)
+                varliklarList.Add(item);
+            var donenToplam = CalculateSectionTotal(donenDetaylar.Cast<object>().ToList(), allPeriods);
             varliklarList.Add(new { Name = "DÖNEN VARLIKLAR", IsCategory = true, NotCode = (string?)null, Values = donenToplam });
         }
 
@@ -125,48 +121,42 @@ public class BilancoController : ControllerBase
         // KAYNAKLAR bölümü
         var kaynaklarList = new List<object>();
 
-        // ÖZKAYNAKLAR başlığı
-        kaynaklarList.Add(new { Name = "ÖZKAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
-        
         // ÖZKAYNAKLAR alt kalemleri (L1 kodlarına göre grupla)
         var ozkaynaklar = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "5" });
-        foreach (var item in ozkaynaklar)
+        var ozkaynakDetaylar = ozkaynaklar.Where(i => !IsSectionHeaderNameRow(i, "ÖZKAYNAKLAR")).ToList();
+        if (ozkaynakDetaylar.Count == 0)
+            kaynaklarList.Add(new { Name = "ÖZKAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        else
         {
-            kaynaklarList.Add(item);
-        }
-        if (ozkaynaklar.Count > 0)
-        {
-            var ozkaynakToplam = CalculateSectionTotal(ozkaynaklar.Cast<object>().ToList(), allPeriods);
+            foreach (var item in ozkaynakDetaylar)
+                kaynaklarList.Add(item);
+            var ozkaynakToplam = CalculateSectionTotal(ozkaynakDetaylar.Cast<object>().ToList(), allPeriods);
             kaynaklarList.Add(new { Name = "ÖZKAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = ozkaynakToplam });
         }
 
-        // UZUN VADELİ KAYNAKLAR başlığı
-        kaynaklarList.Add(new { Name = "UZUN VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
-        
         // UZUN VADELİ KAYNAKLAR alt kalemleri (L1 kodlarına göre grupla)
         var uzunVadeli = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "4" });
-        foreach (var item in uzunVadeli)
+        var uzunVadeliDetaylar = uzunVadeli.Where(i => !IsSectionHeaderNameRow(i, "UZUN VADELİ KAYNAKLAR")).ToList();
+        if (uzunVadeliDetaylar.Count == 0)
+            kaynaklarList.Add(new { Name = "UZUN VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        else
         {
-            kaynaklarList.Add(item);
-        }
-        if (uzunVadeli.Count > 0)
-        {
-            var uzunVadeliToplam = CalculateSectionTotal(uzunVadeli.Cast<object>().ToList(), allPeriods);
+            foreach (var item in uzunVadeliDetaylar)
+                kaynaklarList.Add(item);
+            var uzunVadeliToplam = CalculateSectionTotal(uzunVadeliDetaylar.Cast<object>().ToList(), allPeriods);
             kaynaklarList.Add(new { Name = "UZUN VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = uzunVadeliToplam });
         }
 
-        // CURRENT LIABILITIES başlığı
-        kaynaklarList.Add(new { Name = "KISA VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
-        
-        // CURRENT LIABILITIES alt kalemleri (L1 kodlarına göre grupla)
+        // KISA VADELİ KAYNAKLAR alt kalemleri (L1 kodlarına göre grupla)
         var kisaVadeli = await GetBilancoSectionByL1(companyId, year.Value, allPeriods, new[] { "3" });
-        foreach (var item in kisaVadeli)
+        var kisaVadeliDetaylar = kisaVadeli.Where(i => !IsSectionHeaderNameRow(i, "KISA VADELİ KAYNAKLAR")).ToList();
+        if (kisaVadeliDetaylar.Count == 0)
+            kaynaklarList.Add(new { Name = "KISA VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = new Dictionary<string, decimal>() });
+        else
         {
-            kaynaklarList.Add(item);
-        }
-        if (kisaVadeli.Count > 0)
-        {
-            var kisaVadeliToplam = CalculateSectionTotal(kisaVadeli.Cast<object>().ToList(), allPeriods);
+            foreach (var item in kisaVadeliDetaylar)
+                kaynaklarList.Add(item);
+            var kisaVadeliToplam = CalculateSectionTotal(kisaVadeliDetaylar.Cast<object>().ToList(), allPeriods);
             kaynaklarList.Add(new { Name = "KISA VADELİ KAYNAKLAR", IsCategory = true, NotCode = (string?)null, Values = kisaVadeliToplam });
         }
 
@@ -765,5 +755,17 @@ public class BilancoController : ControllerBase
         // Anonymous type kontrolü
         var type = item.GetType();
         return type.GetProperty("IsCategory") != null || type.GetProperty("IsTotal") != null;
+    }
+
+    /// <summary>
+    /// Bölüm verisinden gelen satırın, ana bölüm başlığı (DURAN VARLIKLAR, DÖNEN VARLIKLAR vb.) ile aynı isimde olup olmadığını kontrol eder.
+    /// Custom parametrelerden gelen bu tür tekrarları eklemeden atlamak için kullanılır.
+    /// </summary>
+    private static bool IsSectionHeaderNameRow(Dictionary<string, object> item, string sectionHeaderName)
+    {
+        if (item == null || string.IsNullOrWhiteSpace(sectionHeaderName)) return false;
+        if (!item.TryGetValue("Name", out var nameObj) || nameObj == null) return false;
+        var name = (nameObj as string)?.Trim() ?? "";
+        return string.Equals(name, sectionHeaderName, StringComparison.Ordinal);
     }
 }

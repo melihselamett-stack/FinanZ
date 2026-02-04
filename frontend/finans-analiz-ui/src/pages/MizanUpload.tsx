@@ -11,7 +11,10 @@ export default function MizanUpload() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
   const [periods, setPeriods] = useState<Period[]>([])
+  /** Üst sekmeler: yıl (örn. "2024") veya "new-xxx" */
   const [activeTab, setActiveTab] = useState<string | null>(null)
+  /** Yıl sekmesi seçiliyken, o yıldaki hangi dönemin seçili olduğu */
+  const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null)
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth() + 1)
   const [loading, setLoading] = useState(true)
@@ -51,10 +54,7 @@ export default function MizanUpload() {
 
   const loadPeriods = async () => {
     if (!selectedCompanyId) {
-      // Şirket seçilmediyse yeni sekme oluştur
-      if (!activeTab) {
-        handleNewTab()
-      }
+      if (!activeTab) handleNewTab()
       return
     }
     setPeriodsLoading(true)
@@ -62,22 +62,31 @@ export default function MizanUpload() {
       const response = await mizanApi.getPeriods(selectedCompanyId)
       const loadedPeriods = response.data
       setPeriods(loadedPeriods)
-      if (loadedPeriods.length > 0 && !activeTab) {
-        const firstPeriod = loadedPeriods[0]
-        const tabKey = `${firstPeriod.year}-${firstPeriod.month}`
-        setActiveTab(tabKey)
-        setYear(firstPeriod.year)
-        setMonth(firstPeriod.month)
+      if (loadedPeriods.length > 0) {
+        const yearsWithPeriods = [...new Set(loadedPeriods.map((p: Period) => p.year))].sort((a, b) => b - a)
+        const firstYear = yearsWithPeriods[0]
+        const periodsForFirstYear = loadedPeriods.filter((p: Period) => p.year === firstYear).sort((a: Period, b: Period) => a.month - b.month)
+        if (!activeTab) {
+          setActiveTab(String(firstYear))
+          setSelectedPeriod(periodsForFirstYear[0])
+        } else if (activeTab !== 'new' && !activeTab.startsWith('new-')) {
+          const currentYear = Number(activeTab)
+          const periodsForYear = loadedPeriods.filter((p: Period) => p.year === currentYear)
+          if (periodsForYear.length === 0) {
+            setActiveTab(String(yearsWithPeriods[0] ?? firstYear))
+            const first = loadedPeriods.filter((p: Period) => p.year === yearsWithPeriods[0]).sort((a: Period, b: Period) => a.month - b.month)[0]
+            setSelectedPeriod(first ?? null)
+          } else {
+            const stillExists = selectedPeriod && periodsForYear.some((p: Period) => p.year === selectedPeriod.year && p.month === selectedPeriod.month)
+            if (!stillExists) setSelectedPeriod(periodsForYear.sort((a: Period, b: Period) => a.month - b.month)[0])
+          }
+        }
       } else if (loadedPeriods.length === 0 && !activeTab) {
-        // Eğer hiç dönem yoksa, yeni sekme oluştur
         handleNewTab()
       }
     } catch (error) {
       console.error('Dönemler yüklenirken hata:', error)
-      // Hata durumunda da yeni sekme oluştur
-      if (!activeTab) {
-        handleNewTab()
-      }
+      if (!activeTab) handleNewTab()
     } finally {
       setPeriodsLoading(false)
     }
@@ -89,8 +98,8 @@ export default function MizanUpload() {
       return
     }
 
-    const uploadY = uploadYear || year
-    const uploadM = uploadMonth || month
+    const uploadY = typeof uploadYear === 'number' ? uploadYear : year
+    const uploadM = typeof uploadMonth === 'number' ? uploadMonth : month
     const tabKey = `${uploadY}-${uploadM}`
 
     setUploading({ ...uploading, [tabKey]: true })
@@ -100,10 +109,9 @@ export default function MizanUpload() {
     try {
       const response = await mizanApi.upload(selectedCompanyId, uploadY, uploadM, file)
       setResult({ ...result, [tabKey]: response.data })
-      // Yükleme başarılı olduğunda dönemleri yeniden yükle ve aktif sekmeyi güncelle
       await loadPeriods()
-      // Yüklenen dönemi aktif sekme yap
-      setActiveTab(tabKey)
+      setActiveTab(String(uploadY))
+      setSelectedPeriod({ year: uploadY, month: uploadM })
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Yükleme başarısız'
       setError({ ...error, [tabKey]: errorMessage })
@@ -113,42 +121,58 @@ export default function MizanUpload() {
   }
 
   const handleNewTab = () => {
-    const newTabKey = `new-${Date.now()}`
-    setActiveTab(newTabKey)
+    setActiveTab(`new-${Date.now()}`)
+    setSelectedPeriod(null)
     const currentYear = new Date().getFullYear()
     const currentMonth = new Date().getMonth() + 1
     setYear(currentYear)
     setMonth(currentMonth)
   }
 
-  const handleTabClick = (period: Period) => {
-    const tabKey = `${period.year}-${period.month}`
-    setActiveTab(tabKey)
+  const handleYearTabClick = (y: number) => {
+    setActiveTab(String(y))
+    const periodsForYear = periods.filter(p => p.year === y).sort((a, b) => a.month - b.month)
+    setSelectedPeriod(periodsForYear[0] ?? null)
+  }
+
+  const handlePeriodInYearClick = (period: Period) => {
+    setSelectedPeriod(period)
     setYear(period.year)
     setMonth(period.month)
   }
 
   const handleDeletePeriod = async (period: Period) => {
     if (!selectedCompanyId) return
-    if (!confirm(`${period.year} yılı ${months[period.month - 1]} ayı mizanını silmek istediğinize emin misiniz?`)) {
+    const periodLabel = period.month === MONTH_ACILIS ? 'Açılış mizanını' : `${period.year} yılı ${months[period.month - 1]} ayı mizanını`
+    if (!confirm(`${periodLabel} silmek istediğinize emin misiniz?`)) {
       return
     }
 
     try {
       await mizanApi.deletePeriod(selectedCompanyId, period.year, period.month)
-      await loadPeriods()
-      if (periods.length > 1) {
-        const remainingPeriods = periods.filter(p => !(p.year === period.year && p.month === period.month))
-        if (remainingPeriods.length > 0) {
-          handleTabClick(remainingPeriods[0])
-        } else {
-          setActiveTab(null)
-        }
-      } else {
+      const remainingPeriods = periods.filter(p => !(p.year === period.year && p.month === period.month))
+      setPeriods(remainingPeriods)
+      if (remainingPeriods.length === 0) {
         setActiveTab(null)
+        setSelectedPeriod(null)
+        handleNewTab()
+        return
+      }
+      const yearsWithPeriods = [...new Set(remainingPeriods.map(p => p.year))].sort((a, b) => b - a)
+      const currentYear = activeTab && !activeTab.startsWith('new-') ? Number(activeTab) : null
+      const remainingInYear = currentYear != null ? remainingPeriods.filter(p => p.year === currentYear) : []
+      if (remainingInYear.length === 0) {
+        setActiveTab(String(yearsWithPeriods[0]))
+        const first = remainingPeriods.filter(p => p.year === yearsWithPeriods[0]).sort((a, b) => a.month - b.month)[0]
+        setSelectedPeriod(first)
+      } else {
+        const stillSelected = selectedPeriod && remainingInYear.some(p => p.year === selectedPeriod.year && p.month === selectedPeriod.month)
+        if (!stillSelected) setSelectedPeriod(remainingInYear.sort((a, b) => a.month - b.month)[0])
       }
     } catch (error) {
       console.error('Dönem silinirken hata:', error)
+    } finally {
+      loadPeriods()
     }
   }
 
@@ -172,7 +196,7 @@ export default function MizanUpload() {
   const handleDrop = (e: React.DragEvent, uploadYear?: number, uploadMonth?: number) => {
     e.preventDefault()
     e.stopPropagation()
-    const tabKey = uploadYear && uploadMonth ? `${uploadYear}-${uploadMonth}` : 'current'
+    const tabKey = (uploadYear != null && uploadMonth != null) ? `${uploadYear}-${uploadMonth}` : 'current'
     setDragActive({ ...dragActive, [tabKey]: false })
     
     const file = e.dataTransfer.files?.[0]
@@ -187,6 +211,7 @@ export default function MizanUpload() {
     'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
     'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
   ]
+  const MONTH_ACILIS = 0 // Açılış mizanı için özel ay değeri
 
   const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)
 
@@ -260,11 +285,8 @@ export default function MizanUpload() {
     return activeTab || 'new'
   }
 
-  const getCurrentPeriod = () => {
-    if (activeTab && !activeTab.startsWith('new-')) {
-      const [y, m] = activeTab.split('-').map(Number)
-      return { year: y, month: m }
-    }
+  const getCurrentPeriod = (): Period => {
+    if (activeTab && !activeTab.startsWith('new-') && selectedPeriod) return selectedPeriod
     return { year, month }
   }
 
@@ -313,6 +335,7 @@ export default function MizanUpload() {
                 onChange={(e) => setMonth(Number(e.target.value))}
                 className="input-field"
               >
+                <option value={MONTH_ACILIS}>Açılış</option>
                 {months.map((m, i) => (
                   <option key={i} value={i + 1}>{m}</option>
                 ))}
@@ -412,49 +435,96 @@ export default function MizanUpload() {
         <p className="text-gray-400 mt-1">Excel dosyanızı yükleyerek mizanı sisteme aktarın</p>
       </div>
 
-      {/* Tabs */}
+      {/* Yıl sekmeleri */}
       <div className="card p-0">
         <div className="flex items-center border-b border-gray-700 overflow-x-auto">
-          {periods.map((period) => {
-            const tabKey = `${period.year}-${period.month}`
-            const isActive = activeTab === tabKey
+          {(() => {
+            const yearsWithPeriods = [...new Set(periods.map(p => p.year))].sort((a, b) => b - a)
             return (
-              <button
-                key={tabKey}
-                onClick={() => handleTabClick(period)}
-                className={`px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
-                  isActive
-                    ? 'border-primary-500 text-primary-400 bg-primary-500/10'
-                    : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span>{months[period.month - 1]} {period.year}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleDeletePeriod(period)
-                    }}
-                    className="text-red-400 hover:text-red-300 text-xs"
-                    title="Sil"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </button>
+              <>
+                {yearsWithPeriods.map((y) => {
+                  const isActive = activeTab === String(y)
+                  return (
+                    <button
+                      key={y}
+                      onClick={() => handleYearTabClick(y)}
+                      className={`px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+                        isActive
+                          ? 'border-primary-500 text-primary-400 bg-primary-500/10'
+                          : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
+                      }`}
+                    >
+                      {y}
+                    </button>
+                  )
+                })}
+                <button
+                  onClick={handleNewTab}
+                  className={`px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+                    activeTab != null && activeTab.startsWith('new-')
+                      ? 'border-primary-500 text-primary-400 bg-primary-500/10'
+                      : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
+                  }`}
+                >
+                  + Yeni Mizan
+                </button>
+              </>
             )
-          })}
-          <button
-            onClick={handleNewTab}
-            className={`px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
-              activeTab && activeTab.startsWith('new-')
-                ? 'border-primary-500 text-primary-400 bg-primary-500/10'
-                : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
-            }`}
-          >
-            + Yeni Mizan
-          </button>
+          })()}
         </div>
+
+        {/* Seçili yıldaki dönemler (alt sekme satırı) */}
+        {activeTab != null && !activeTab.startsWith('new-') && (() => {
+          const selectedYear = Number(activeTab)
+          const periodsInYear = periods.filter(p => p.year === selectedYear).sort((a, b) => a.month - b.month)
+          if (periodsInYear.length === 0) return null
+          return (
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-gray-800/50 border-b border-gray-700">
+              <span className="text-gray-400 text-sm mr-2">Dönem:</span>
+              {periodsInYear.map((period) => {
+                const isActive = selectedPeriod?.year === period.year && selectedPeriod?.month === period.month
+                const label = period.month === MONTH_ACILIS ? `Açılış ${period.year}` : `${months[period.month - 1]} ${period.year}`
+                return (
+                  <div
+                    key={`${period.year}-${period.month}`}
+                    className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 transition-colors ${
+                      isActive
+                        ? 'border-primary-500 bg-primary-500/20 text-primary-300'
+                        : 'border-gray-600 text-gray-400 hover:border-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handlePeriodInYearClick(period)}
+                      className="focus:outline-none"
+                    >
+                      {label}
+                    </button>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeletePeriod(period)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleDeletePeriod(period)
+                        }
+                      }}
+                      className="text-red-400 hover:text-red-300 text-xs cursor-pointer ml-0.5"
+                      title="Sil"
+                    >
+                      ✕
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
 
         <div className="p-6">
           {periodsLoading ? (
@@ -462,17 +532,29 @@ export default function MizanUpload() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
             </div>
           ) : activeTab ? (
-            renderUploadArea(getCurrentPeriod().year, getCurrentPeriod().month)
+            (() => {
+              const isNewTab = activeTab.startsWith('new-')
+              const period = getCurrentPeriod()
+              if (isNewTab) return renderUploadArea(year, month)
+              if (selectedPeriod) return renderUploadArea(period.year, period.month)
+              const yearsWithPeriods = [...new Set(periods.map(p => p.year))].sort((a, b) => b - a)
+              if (yearsWithPeriods.length > 0) {
+                const firstYear = yearsWithPeriods[0]
+                const firstPeriod = periods.filter(p => p.year === firstYear).sort((a, b) => a.month - b.month)[0]
+                return firstPeriod ? renderUploadArea(firstPeriod.year, firstPeriod.month) : renderUploadArea(year, month)
+              }
+              return renderUploadArea(year, month)
+            })()
           ) : periods.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-400 mb-4">Henüz mizan yüklenmemiş. Yeni mizan yüklemek için "Yeni Mizan" butonuna tıklayın</p>
+              <p className="text-gray-400 mb-4">Henüz mizan yüklenmemiş. Yeni mizan yüklemek için &quot;+ Yeni Mizan&quot; butonuna tıklayın</p>
               <button onClick={handleNewTab} className="btn-primary">
                 + Yeni Mizan Ekle
               </button>
             </div>
           ) : (
             <div className="text-center py-12">
-              <p className="text-gray-400 mb-4">Bir sekme seçin veya yeni mizan ekleyin</p>
+              <p className="text-gray-400 mb-4">Bir yıl sekmesi seçin veya yeni mizan ekleyin</p>
               <button onClick={handleNewTab} className="btn-primary">
                 + Yeni Mizan Ekle
               </button>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { companyApi, bilancoApi, bilancoParameterApi, Company, BilancoData, BilancoItem, NotCodeDetailsData, NotCodeDetail, BilancoParameter, BilancoReportRow, BilancoReportRowsData } from '../services/api'
+import { companyApi, bilancoApi, bilancoParameterApi, mizanApi, Company, BilancoData, BilancoItem, NotCodeDetailsData, NotCodeDetail, BilancoParameter, BilancoReportRow, BilancoReportRowsData } from '../services/api'
 import * as XLSX from 'xlsx'
 
 export default function BilancoRaporlari() {
@@ -11,6 +11,11 @@ export default function BilancoRaporlari() {
   const [dataLoading, setDataLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
+  const [compareYears, setCompareYears] = useState(false)
+  const [compareYear1, setCompareYear1] = useState<number>(new Date().getFullYear())
+  const [compareYear2, setCompareYear2] = useState<number>(new Date().getFullYear() - 1)
+  const [availableYears, setAvailableYears] = useState<number[]>([])
+  const [multiYearData, setMultiYearData] = useState<[BilancoData, BilancoData] | null>(null)
   const [selectedNotCode, setSelectedNotCode] = useState<string | null>(null)
   const [notCodeDetails, setNotCodeDetails] = useState<NotCodeDetailsData | null>(null)
   const [notCodeDetailsLoading, setNotCodeDetailsLoading] = useState(false)
@@ -40,16 +45,29 @@ export default function BilancoRaporlari() {
     if (selectedCompanyId) {
       const company = companies.find(c => c.id === selectedCompanyId)
       setSelectedCompany(company || null)
-      loadBilancoData(selectedCompanyId, selectedYear)
+      if (!compareYears) {
+        loadBilancoData(selectedCompanyId, selectedYear)
+      }
       loadParameters(selectedCompanyId)
-      // Rapor satırlarını da yükle (eğer parametre ayarları açıksa)
       if (showParametersSection) {
         loadReportRows(selectedCompanyId, selectedYear)
       }
       setSelectedNotCode(null)
       setNotCodeDetails(null)
+      mizanApi.getPeriods(selectedCompanyId).then(res => {
+        const years = [...new Set((res.data || []).map((p: { year: number }) => p.year))].sort((a, b) => b - a)
+        setAvailableYears(years.length > 0 ? years : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i))
+        // Seçili yıl bu şirkette yoksa, mizanı olan ilk yıla geçir ki veri gelsin
+        if (years.length > 0 && !years.includes(selectedYear)) {
+          setSelectedYear(years[0])
+        }
+      }).catch(() => setAvailableYears(Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)))
     }
-  }, [selectedCompanyId, selectedYear, companies])
+  }, [selectedCompanyId, selectedYear, companies, compareYears])
+
+  useEffect(() => {
+    if (!compareYears) setMultiYearData(null)
+  }, [compareYears])
 
   useEffect(() => {
     console.log('useEffect tetiklendi:', { selectedNotCode, selectedCompanyId, selectedYear })
@@ -109,6 +127,45 @@ export default function BilancoRaporlari() {
       const errorMessage = err instanceof Error ? err.message : 'Bilanço yüklenirken bir hata oluştu'
       setError(errorMessage)
       console.error('Bilanço yüklenirken hata:', err)
+    } finally {
+      setDataLoading(false)
+    }
+  }
+
+  const loadCompareYears = async () => {
+    if (!selectedCompanyId || compareYear1 === compareYear2) return
+    setDataLoading(true)
+    setError(null)
+    setMultiYearData(null)
+    try {
+      const [res1, res2] = await Promise.all([
+        bilancoApi.getBilanco(selectedCompanyId, compareYear1),
+        bilancoApi.getBilanco(selectedCompanyId, compareYear2)
+      ])
+      const toData = (responseData: any, year: number) => ({
+        year: responseData.Year ?? responseData.year ?? year,
+        periods: responseData.Periods ?? responseData.periods ?? [],
+        varliklar: (responseData.Varliklar ?? responseData.varliklar ?? []).map((item: any) => ({
+          Name: item.Name ?? item.name ?? '',
+          AccountCode: item.AccountCode ?? item.accountCode,
+          NotCode: item.NotCode ?? item.notCode,
+          IsCategory: item.IsCategory ?? item.isCategory ?? false,
+          IsTotal: item.IsTotal ?? item.isTotal ?? false,
+          Values: item.Values ?? item.values ?? {}
+        })) as BilancoItem[],
+        kaynaklar: (responseData.Kaynaklar ?? responseData.kaynaklar ?? []).map((item: any) => ({
+          Name: item.Name ?? item.name ?? '',
+          AccountCode: item.AccountCode ?? item.accountCode,
+          NotCode: item.NotCode ?? item.notCode,
+          IsCategory: item.IsCategory ?? item.isCategory ?? false,
+          IsTotal: item.IsTotal ?? item.isTotal ?? false,
+          Values: item.Values ?? item.values ?? {}
+        })) as BilancoItem[]
+      })
+      setMultiYearData([toData(res1.data, compareYear1), toData(res2.data, compareYear2)])
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Karşılaştırma yüklenirken hata oluştu'
+      setError(msg)
     } finally {
       setDataLoading(false)
     }
@@ -448,17 +505,23 @@ export default function BilancoRaporlari() {
     XLSX.writeFile(wb, fileName)
   }
 
-  const renderBilancoSection = (items: BilancoItem[], title: string) => {
+  const renderBilancoSection = (
+    items: BilancoItem[],
+    title: string,
+    extraRows?: { toplamVarlik: { [key: string]: number }; toplamKaynak: { [key: string]: number }; donemKari: { [key: string]: number } }
+  ) => {
     if (!items || items.length === 0) return null
 
     return (
       <div className="space-y-1">
-        <table className="w-full text-sm border-collapse table-fixed">
+        <table className="text-sm border-collapse table-fixed min-w-[1200px]" style={{ width: 'max-content' }}>
           <colgroup>
-            <col className="w-auto" />
-            <col className="w-16" />
-            {data?.periods.map((period, idx) => <col key={`period-col-main-${period.year}-${period.month}-${idx}`} className="w-32" />)}
-            <col className="w-32" />
+            <col style={{ width: '220px', minWidth: '220px' }} />
+            <col style={{ width: '52px', minWidth: '52px' }} />
+            {data?.periods.map((period, idx) => (
+              <col key={`period-col-main-${period.year}-${period.month}-${idx}`} style={{ width: '90px', minWidth: '90px' }} />
+            ))}
+            <col style={{ width: '100px', minWidth: '100px' }} />
           </colgroup>
           <thead>
             <tr className="bg-gray-800 text-gray-300">
@@ -466,7 +529,7 @@ export default function BilancoRaporlari() {
               <th className="py-2 px-3 text-center border border-gray-700">NOT</th>
               {data?.periods.map(period => (
                 <th key={`${period.year}-${period.month}`} className="py-2 px-3 text-right border border-gray-700">
-                  {months[period.month - 1]} TL
+                  {period.month === 0 ? 'Açılış' : months[period.month - 1]} TL
                 </th>
               ))}
               <th className="py-2 px-3 text-right border border-gray-700">Toplam TL</th>
@@ -489,9 +552,9 @@ export default function BilancoRaporlari() {
                       : 'hover:bg-gray-900/50'
                   }`}
                 >
-                  <td className={`py-2 px-3 border border-gray-700 ${
+                  <td className={`py-2 px-3 border border-gray-700 truncate max-w-[220px] ${
                     isTotal ? 'text-yellow-200' : isCategory || isSubTotal ? 'text-gray-200' : 'text-white'
-                  }`}>
+                  }`} title={item.Name}>
                     {item.Name}
                   </td>
                   <td className={`py-2 px-3 text-center border border-gray-700 ${
@@ -536,6 +599,139 @@ export default function BilancoRaporlari() {
                 </tr>
               )
             })}
+            {title === 'KAYNAKLAR' && extraRows && data?.periods && (
+              <>
+                <tr className="bg-gray-700/50 font-bold border-t border-gray-600">
+                  <td className="py-2 px-3 border border-gray-700 text-yellow-200">Toplam Varlıklar</td>
+                  <td className="py-2 px-3 text-center border border-gray-700 text-yellow-200"></td>
+                  {data.periods.map(period => (
+                    <td key={`tv-${period.month}`} className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200" style={{ whiteSpace: 'nowrap' }}>
+                      {formatBalance(extraRows.toplamVarlik[`${period.month}`] ?? 0)}
+                    </td>
+                  ))}
+                  <td className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200" style={{ whiteSpace: 'nowrap' }}>
+                    {formatBalance(extraRows.toplamVarlik['Total'] ?? 0)}
+                  </td>
+                </tr>
+                <tr className="bg-gray-700/50 font-bold">
+                  <td className="py-2 px-3 border border-gray-700 text-yellow-200">Toplam Kaynaklar</td>
+                  <td className="py-2 px-3 text-center border border-gray-700 text-yellow-200"></td>
+                  {data.periods.map(period => (
+                    <td key={`tk-${period.month}`} className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200" style={{ whiteSpace: 'nowrap' }}>
+                      {formatBalance(extraRows.toplamKaynak[`${period.month}`] ?? 0)}
+                    </td>
+                  ))}
+                  <td className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200" style={{ whiteSpace: 'nowrap' }}>
+                    {formatBalance(extraRows.toplamKaynak['Total'] ?? 0)}
+                  </td>
+                </tr>
+                <tr className="bg-primary-500/20 font-bold border-t-2 border-primary-500/50">
+                  <td className="py-2 px-3 border border-gray-700 text-primary-200">Dönem Karı</td>
+                  <td className="py-2 px-3 text-center border border-gray-700 text-primary-200"></td>
+                  {data.periods.map(period => {
+                    const value = extraRows.donemKari[`${period.month}`] ?? 0
+                    const isNegative = value < 0
+                    return (
+                      <td
+                        key={`donem-${period.year}-${period.month}`}
+                        className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs align-top ${isNegative ? 'text-red-400' : 'text-primary-200'}`}
+                        style={{ whiteSpace: 'nowrap' }}
+                      >
+                        {formatBalance(value)}
+                      </td>
+                    )
+                  })}
+                  <td
+                    className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs align-top ${(extraRows.donemKari['Total'] ?? 0) < 0 ? 'text-red-400' : 'text-primary-200'}`}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    {formatBalance(extraRows.donemKari['Total'] ?? 0)}
+                  </td>
+                </tr>
+              </>
+            )}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  const renderBilancoSectionCompare = (
+    items1: BilancoItem[],
+    items2: BilancoItem[],
+    data1: BilancoData,
+    data2: BilancoData,
+    title: string
+  ) => {
+    const map2ByKey = new Map<string, BilancoItem>()
+    items2.forEach(it => map2ByKey.set(`${it.Name}|${it.NotCode ?? ''}`, it))
+    const merged = items1.map(it1 => {
+      const key = `${it1.Name}|${it1.NotCode ?? ''}`
+      return { it1, it2: map2ByKey.get(key) }
+    })
+    return (
+      <div className="space-y-1">
+        <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
+        <table className="w-full text-sm border-collapse table-fixed min-w-[500px]">
+          <colgroup>
+            <col style={{ width: '220px', minWidth: '220px' }} />
+            <col style={{ width: '52px', minWidth: '52px' }} />
+            <col style={{ width: '120px', minWidth: '120px' }} />
+            <col style={{ width: '120px', minWidth: '120px' }} />
+          </colgroup>
+          <thead>
+            <tr className="bg-gray-800 text-gray-300">
+              <th className="py-2 px-3 text-left border border-gray-700">Hesap Adı</th>
+              <th className="py-2 px-3 text-center border border-gray-700">NOT</th>
+              <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{data1.year} Toplam TL</th>
+              <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{data2.year} Toplam TL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {merged.map(({ it1, it2 }, index) => {
+              const isCategory = it1.IsCategory && !it1.NotCode
+              const isTotal = it1.IsTotal
+              const isSubTotal = it1.IsCategory && it1.NotCode === null && index > 0 && items1[index - 1]?.NotCode
+              const v2 = it2?.Values ?? {}
+              const total1 = it1.Values.Total ?? 0
+              const total2 = v2.Total ?? 0
+              const neg1 = total1 < 0
+              const neg2 = total2 < 0
+              return (
+                <tr
+                  key={index}
+                  className={`${
+                    isTotal ? 'bg-yellow-500/30 font-bold'
+                      : isCategory || isSubTotal ? 'bg-gray-700/50 font-bold' : 'hover:bg-gray-900/50'
+                  }`}
+                >
+                  <td className="py-2 px-3 border border-gray-700 truncate max-w-[220px] text-white" title={it1.Name}>{it1.Name}</td>
+                  <td className="py-2 px-3 text-center border border-gray-700 text-gray-300">{it1.NotCode ?? ''}</td>
+                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${neg1 ? 'text-red-400' : 'text-gray-300'}`} style={{ whiteSpace: 'nowrap' }}>
+                    {formatBalance(total1)}
+                  </td>
+                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${neg2 ? 'text-red-400' : 'text-gray-300'}`} style={{ whiteSpace: 'nowrap' }}>
+                    {formatBalance(total2)}
+                  </td>
+                </tr>
+              )
+            })}
+            {title === 'KAYNAKLAR' && (() => {
+              const tv1 = data1.varliklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
+              const tk1 = data1.kaynaklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
+              const tv2 = data2.varliklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
+              const tk2 = data2.kaynaklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
+              const donemKari1 = tv1 + tk1
+              const donemKari2 = tv2 + tk2
+              return (
+                <tr className="bg-primary-500/20 font-bold border-t-2 border-primary-500/50">
+                  <td className="py-2 px-3 border border-gray-700 text-primary-200">Dönem Karı</td>
+                  <td className="py-2 px-3 text-center border border-gray-700 text-primary-200"></td>
+                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${donemKari1 < 0 ? 'text-red-400' : 'text-primary-200'}`} style={{ whiteSpace: 'nowrap' }}>{formatBalance(donemKari1)}</td>
+                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${donemKari2 < 0 ? 'text-red-400' : 'text-primary-200'}`} style={{ whiteSpace: 'nowrap' }}>{formatBalance(donemKari2)}</td>
+                </tr>
+              )
+            })()}
           </tbody>
         </table>
       </div>
@@ -559,7 +755,7 @@ export default function BilancoRaporlari() {
     )
   }
 
-  const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)
+  const years = availableYears.length > 0 ? availableYears : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)
 
   const varliklarParams = parameters.filter(p => p.Section === 'Varliklar').sort((a, b) => a.DisplayOrder - b.DisplayOrder)
   const kaynaklarParams = parameters.filter(p => p.Section === 'Kaynaklar').sort((a, b) => a.DisplayOrder - b.DisplayOrder)
@@ -581,15 +777,59 @@ export default function BilancoRaporlari() {
               <option key={c.id} value={c.id}>{c.companyName}</option>
             ))}
           </select>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="input-field w-auto"
-          >
-            {years.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+          {!compareYears && (
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="input-field w-auto"
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          )}
+          <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={compareYears}
+              onChange={(e) => setCompareYears(e.target.checked)}
+              className="rounded border-gray-600"
+            />
+            <span className="text-sm">Yılları karşılaştır</span>
+          </label>
+          {compareYears && (
+            <>
+              <select
+                value={compareYear1}
+                onChange={(e) => setCompareYear1(Number(e.target.value))}
+                className="input-field w-auto"
+                title="Yıl 1"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <span className="text-gray-500">vs</span>
+              <select
+                value={compareYear2}
+                onChange={(e) => setCompareYear2(Number(e.target.value))}
+                className="input-field w-auto"
+                title="Yıl 2"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={loadCompareYears}
+                disabled={compareYear1 === compareYear2 || dataLoading}
+                className="btn-primary"
+              >
+                {dataLoading ? 'Yükleniyor...' : 'Karşılaştırmayı Yükle'}
+              </button>
+            </>
+          )}
           <button
             onClick={() => {
               setShowParametersSection(!showParametersSection)
@@ -615,12 +855,15 @@ export default function BilancoRaporlari() {
             </button>
           )}
           <button
-            onClick={() => selectedCompanyId && loadBilancoData(selectedCompanyId, selectedYear)}
+            onClick={() => {
+              if (compareYears && selectedCompanyId) loadCompareYears()
+              else if (selectedCompanyId) loadBilancoData(selectedCompanyId, selectedYear)
+            }}
             className="btn-secondary"
           >
             🔄 Yenile
           </button>
-          {data && data.varliklar && data.varliklar.length > 0 && (
+          {((data && data.varliklar && data.varliklar.length > 0) || (multiYearData && multiYearData[0].varliklar.length > 0)) && (
             <button
               onClick={exportToExcel}
               className="btn-primary"
@@ -1186,6 +1429,16 @@ export default function BilancoRaporlari() {
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
         </div>
+      ) : multiYearData ? (
+        <div className="card p-0 overflow-hidden">
+          <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
+            <div className="p-6 space-y-6 min-w-0">
+              {renderBilancoSectionCompare(multiYearData[0].varliklar, multiYearData[1].varliklar, multiYearData[0], multiYearData[1], 'VARLIKLAR')}
+              <div className="border-t border-gray-700 my-4"></div>
+              {renderBilancoSectionCompare(multiYearData[0].kaynaklar, multiYearData[1].kaynaklar, multiYearData[0], multiYearData[1], 'KAYNAKLAR')}
+            </div>
+          </div>
+        </div>
       ) : !data || (!data.periods || data.periods.length === 0) ? (
         <div className="card text-center py-12">
           <p className="text-gray-400">Henüz mizan yüklenmemiş. Mizan yüklemek için "Mizan Yükle" sayfasına gidin.</p>
@@ -1242,13 +1495,15 @@ export default function BilancoRaporlari() {
                   <p className="text-gray-400">Bu NOT kodu için alt hesap bulunamadı.</p>
                 </div>
               ) : (
-                <div className="overflow-auto max-h-[75vh]">
-                  <table className="w-full text-sm border-collapse table-fixed">
+                <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
+                  <table className="text-sm border-collapse table-fixed min-w-[1000px]" style={{ width: 'max-content' }}>
                     <colgroup>
-                      <col className="w-auto" />
-                      <col className="w-auto" />
-                      {notCodeDetails.Periods.map((period, idx) => <col key={`period-col-${period.year}-${period.month}-${idx}`} className="w-32" />)}
-                      <col className="w-32" />
+                      <col style={{ width: '100px', minWidth: '100px' }} />
+                      <col style={{ width: '200px', minWidth: '200px' }} />
+                      {notCodeDetails.Periods.map((period, idx) => (
+                        <col key={`period-col-${period.year}-${period.month}-${idx}`} style={{ width: '90px', minWidth: '90px' }} />
+                      ))}
+                      <col style={{ width: '100px', minWidth: '100px' }} />
                     </colgroup>
                     <thead>
                       <tr className="bg-gray-800 text-gray-300">
@@ -1445,11 +1700,24 @@ export default function BilancoRaporlari() {
             </div>
           ) : (
             <div className="card p-0 overflow-hidden">
-              <div className="overflow-auto max-h-[75vh]">
-                <div className="p-6 space-y-6">
+              <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
+                <div className="p-6 space-y-6 min-w-0">
                   {renderBilancoSection(data.varliklar, 'VARLIKLAR')}
                   <div className="border-t border-gray-700 my-4"></div>
-                  {renderBilancoSection(data.kaynaklar, 'KAYNAKLAR')}
+                  {(() => {
+                    const toplamVarlik = data.varliklar?.find(x => x.IsTotal)?.Values ?? {}
+                    const toplamKaynak = data.kaynaklar?.find(x => x.IsTotal)?.Values ?? {}
+                    const donemKariValues: { [key: string]: number } = {}
+                    data.periods?.forEach(p => {
+                      donemKariValues[`${p.month}`] = (toplamVarlik[`${p.month}`] ?? 0) + (toplamKaynak[`${p.month}`] ?? 0)
+                    })
+                    donemKariValues['Total'] = (toplamVarlik.Total ?? 0) + (toplamKaynak.Total ?? 0)
+                    return renderBilancoSection(data.kaynaklar, 'KAYNAKLAR', {
+                      toplamVarlik,
+                      toplamKaynak,
+                      donemKari: donemKariValues
+                    })
+                  })()}
                 </div>
               </div>
             </div>

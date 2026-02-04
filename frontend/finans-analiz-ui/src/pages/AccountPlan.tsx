@@ -223,6 +223,10 @@ export default function AccountPlan() {
     'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
     'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
   ]
+  const MONTH_ACILIS = 0 // Açılış mizanı
+
+  const periodLabel = (p: Period) =>
+    p.month === MONTH_ACILIS ? `Açılış ${p.year}` : `${months[p.month - 1]} ${p.year}`
 
   const displayAccounts = viewMode === 'period' ? balances.map(b => ({
     id: b.id,
@@ -408,7 +412,7 @@ export default function AccountPlan() {
                       : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
                   }`}
                 >
-                  {months[period.month - 1]} {period.year}
+                  {periodLabel(period)}
                 </button>
               )
             })}
