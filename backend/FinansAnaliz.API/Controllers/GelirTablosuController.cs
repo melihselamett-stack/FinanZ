@@ -113,8 +113,8 @@ public class GelirTablosuController : ControllerBase
         var satisIndirimleriToplam = CalculateTotal(new[] { satistanIadeler, satisIskontolari, digerIndirimler }, allPeriods);
         items.Add(new { Name = "B- SATIŞ İNDİRİMLERİ (-)", IsCategory = true, NotCode = (string?)null, Values = satisIndirimleriToplam });
 
-        // C- NET SATIŞLAR (hesaplanan: A - B)
-        var netSatislar = CalculateDifference(brutSatislarToplam, satisIndirimleriToplam, allPeriods);
+        // C- NET SATIŞLAR = BRÜT SATIŞLAR + SATIŞ İNDİRİMLERİ (B zaten negatif)
+        var netSatislar = CalculateSum(new[] { brutSatislarToplam, satisIndirimleriToplam }, allPeriods);
         items.Add(new { Name = "C- NET SATIŞLAR", IsTotal = true, NotCode = (string?)null, Values = netSatislar });
 
         // D- SATIŞLARIN MALİYETİ (-)
@@ -138,8 +138,8 @@ public class GelirTablosuController : ControllerBase
         var satislarMaliyetiToplam = CalculateTotal(new[] { satilanMamullerMaliyeti, satilanTicariMallarMaliyeti, satilanHizmetMaliyeti, digerSatislarMaliyeti }, allPeriods);
         items.Add(new { Name = "D- SATIŞLARIN MALİYETİ (-)", IsCategory = true, NotCode = (string?)null, Values = satislarMaliyetiToplam });
 
-        // BRÜT SATIŞ KARI VEYA ZARARI (hesaplanan: C - D)
-        var brutSatisKarZarar = CalculateDifference(netSatislar, satislarMaliyetiToplam, allPeriods);
+        // BRÜT SATIŞ KARI = C-NET SATIŞLAR + D-SATIŞLARIN MALİYETİ (D zaten negatif)
+        var brutSatisKarZarar = CalculateSum(new[] { netSatislar, satislarMaliyetiToplam }, allPeriods);
         items.Add(new { Name = "BRÜT SATIŞ KARI VEYA ZARARI", IsTotal = true, NotCode = (string?)null, Values = brutSatisKarZarar });
 
         // E- FAALİYET GİDERLERİ (-)
@@ -159,8 +159,8 @@ public class GelirTablosuController : ControllerBase
         var faaliyetGiderleriToplam = CalculateTotal(new[] { arastirmaGelistirme, pazarlamaSatisDagitim, genelYonetim }, allPeriods);
         items.Add(new { Name = "E- FAALİYET GİDERLERİ (-)", IsCategory = true, NotCode = (string?)null, Values = faaliyetGiderleriToplam });
 
-        // FAALİYET KARI VEYA ZARARI (hesaplanan: BRÜT SATIŞ KARI - E)
-        var faaliyetKarZarar = CalculateDifference(brutSatisKarZarar, faaliyetGiderleriToplam, allPeriods);
+        // FAALİYET KARI VEYA ZARARI = BRÜT SATIŞ KARI + E-FAALİYET GİDERLERİ (E zaten negatif)
+        var faaliyetKarZarar = CalculateSum(new[] { brutSatisKarZarar, faaliyetGiderleriToplam }, allPeriods);
         items.Add(new { Name = "FAALİYET KARI VEYA ZARARI", IsTotal = true, NotCode = (string?)null, Values = faaliyetKarZarar });
 
         // F- DİĞER FAALİYETLERDEN OLAĞAN GELİR VE KARLAR
@@ -254,8 +254,8 @@ public class GelirTablosuController : ControllerBase
         var finansmanGiderleriToplam = CalculateTotal(new[] { kisaVadeliBorclanma, uzunVadeliBorclanma }, allPeriods);
         items.Add(new { Name = "H- FİNANSMAN GİDERLERİ (-)", IsCategory = true, NotCode = (string?)null, Values = finansmanGiderleriToplam });
 
-        // OLAĞAN KAR VEYA ZARAR (hesaplanan: FAALİYET KARI + F - G - H)
-        var olaganKarZarar = CalculateOlaganKarZarar(faaliyetKarZarar, digerFaaliyetGelirToplam, digerFaaliyetGiderToplam, finansmanGiderleriToplam, allPeriods);
+        // OLAĞAN KAR VEYA ZARAR = FAALİYET KARI + F + G + H (G ve H zaten negatif)
+        var olaganKarZarar = CalculateSum(new[] { faaliyetKarZarar, digerFaaliyetGelirToplam, digerFaaliyetGiderToplam, finansmanGiderleriToplam }, allPeriods);
         items.Add(new { Name = "OLAĞAN KAR VEYA ZARAR", IsTotal = true, NotCode = (string?)null, Values = olaganKarZarar });
 
         // I- OLAĞANDIŞI GELİR VE KARLAR
@@ -288,16 +288,16 @@ public class GelirTablosuController : ControllerBase
         var olaganDisiGiderToplam = CalculateTotal(new[] { calismayanKisimGiderZararlari, oncekiDonemGiderZararlari, digerOlaganDisiGiderZararlar }, allPeriods);
         items.Add(new { Name = "J- OLAĞANDIŞI GİDER VE ZARARLAR (-)", IsCategory = true, NotCode = (string?)null, Values = olaganDisiGiderToplam });
 
-        // DÖNEM KARI VEYA ZARARI (hesaplanan: OLAĞAN KAR + I - J)
-        var donemKarZarar = CalculateDonemKarZarar(olaganKarZarar, olaganDisiGelirToplam, olaganDisiGiderToplam, allPeriods);
+        // DÖNEM KARI VEYA ZARARI = OLAĞAN KAR + I + J (J zaten negatif)
+        var donemKarZarar = CalculateSum(new[] { olaganKarZarar, olaganDisiGelirToplam, olaganDisiGiderToplam }, allPeriods);
         items.Add(new { Name = "DÖNEM KARI VEYA ZARARI", IsTotal = true, NotCode = (string?)null, Values = donemKarZarar });
 
         // K- DÖNEM KARI VERGİ VE DİĞER YASAL YÜKÜMLÜLÜK KARŞILIKLARI (-) (691)
         var donemKariVergi = await GetAccountGroupTotal(companyId, year.Value, allPeriods, "691", isNegative: true);
         items.Add(new { Name = "K- DÖNEM KARI VERGİ VE DİĞER YASAL YÜKÜMLÜLÜK KARŞILIKLARI (-)", IsCategory = true, NotCode = "691", Values = donemKariVergi });
 
-        // DÖNEM NET KARI VEYA ZARARI (hesaplanan: DÖNEM KARI - K)
-        var donemNetKarZarar = CalculateDifference(donemKarZarar, donemKariVergi, allPeriods);
+        // DÖNEM NET KARI VEYA ZARARI = DÖNEM KARI + K (K zaten negatif)
+        var donemNetKarZarar = CalculateSum(new[] { donemKarZarar, donemKariVergi }, allPeriods);
         items.Add(new { Name = "DÖNEM NET KARI VEYA ZARARI", IsTotal = true, NotCode = (string?)null, Values = donemNetKarZarar });
 
         return Ok(new
@@ -434,11 +434,12 @@ public class GelirTablosuController : ControllerBase
         return result;
     }
 
-    private Dictionary<string, decimal> CalculateOlaganKarZarar(
-        Dictionary<string, decimal> faaliyetKarZarar,
-        Dictionary<string, decimal> digerGelirler,
-        Dictionary<string, decimal> digerGiderler,
-        Dictionary<string, decimal> finansmanGiderleri,
+    /// <summary>
+    /// Tüm sözlüklerdeki değerleri dönem bazında toplar (indirim/gider kalemleri zaten negatif gelir).
+    /// Örn: C-NET SATIŞLAR = BRÜT SATIŞLAR + SATIŞ İNDİRİMLERİ
+    /// </summary>
+    private Dictionary<string, decimal> CalculateSum(
+        Dictionary<string, decimal>[] items,
         List<(int Year, int Month)> periods)
     {
         var result = new Dictionary<string, decimal>();
@@ -446,44 +447,10 @@ public class GelirTablosuController : ControllerBase
         foreach (var (periodYear, periodMonth) in periods)
         {
             var periodKey = $"{periodMonth}";
-            var faaliyet = faaliyetKarZarar.ContainsKey(periodKey) ? faaliyetKarZarar[periodKey] : 0;
-            var gelir = digerGelirler.ContainsKey(periodKey) ? digerGelirler[periodKey] : 0;
-            var gider = digerGiderler.ContainsKey(periodKey) ? digerGiderler[periodKey] : 0;
-            var finansman = finansmanGiderleri.ContainsKey(periodKey) ? finansmanGiderleri[periodKey] : 0;
-            result[periodKey] = faaliyet + gelir - gider - finansman;
+            result[periodKey] = items.Sum(item => item.ContainsKey(periodKey) ? item[periodKey] : 0);
         }
 
-        var faaliyetTotal = faaliyetKarZarar.ContainsKey("Total") ? faaliyetKarZarar["Total"] : 0;
-        var gelirTotal = digerGelirler.ContainsKey("Total") ? digerGelirler["Total"] : 0;
-        var giderTotal = digerGiderler.ContainsKey("Total") ? digerGiderler["Total"] : 0;
-        var finansmanTotal = finansmanGiderleri.ContainsKey("Total") ? finansmanGiderleri["Total"] : 0;
-        result["Total"] = faaliyetTotal + gelirTotal - giderTotal - finansmanTotal;
-
-        return result;
-    }
-
-    private Dictionary<string, decimal> CalculateDonemKarZarar(
-        Dictionary<string, decimal> olaganKarZarar,
-        Dictionary<string, decimal> olaganDisiGelirler,
-        Dictionary<string, decimal> olaganDisiGiderler,
-        List<(int Year, int Month)> periods)
-    {
-        var result = new Dictionary<string, decimal>();
-
-        foreach (var (periodYear, periodMonth) in periods)
-        {
-            var periodKey = $"{periodMonth}";
-            var olagan = olaganKarZarar.ContainsKey(periodKey) ? olaganKarZarar[periodKey] : 0;
-            var gelir = olaganDisiGelirler.ContainsKey(periodKey) ? olaganDisiGelirler[periodKey] : 0;
-            var gider = olaganDisiGiderler.ContainsKey(periodKey) ? olaganDisiGiderler[periodKey] : 0;
-            result[periodKey] = olagan + gelir - gider;
-        }
-
-        var olaganTotal = olaganKarZarar.ContainsKey("Total") ? olaganKarZarar["Total"] : 0;
-        var gelirTotal = olaganDisiGelirler.ContainsKey("Total") ? olaganDisiGelirler["Total"] : 0;
-        var giderTotal = olaganDisiGiderler.ContainsKey("Total") ? olaganDisiGiderler["Total"] : 0;
-        result["Total"] = olaganTotal + gelirTotal - giderTotal;
-
+        result["Total"] = items.Sum(item => item.ContainsKey("Total") ? item["Total"] : 0);
         return result;
     }
 

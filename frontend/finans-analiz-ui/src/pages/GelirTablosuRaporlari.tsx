@@ -18,6 +18,7 @@ export default function GelirTablosuRaporlari() {
   const [multiYearData, setMultiYearData] = useState<[GelirTablosuData, GelirTablosuData] | null>(null)
   const [selectedNotCode, setSelectedNotCode] = useState<string | null>(null)
   const [notCodeDetails, setNotCodeDetails] = useState<NotCodeDetailsData | null>(null)
+  const [notCodeDetailsYear2, setNotCodeDetailsYear2] = useState<NotCodeDetailsData | null>(null)
   const [notCodeDetailsLoading, setNotCodeDetailsLoading] = useState(false)
 
   const months = [
@@ -39,6 +40,10 @@ export default function GelirTablosuRaporlari() {
       mizanApi.getPeriods(selectedCompanyId).then(res => {
         const years = [...new Set((res.data || []).map((p: { year: number }) => p.year))].sort((a, b) => b - a)
         setAvailableYears(years.length > 0 ? years : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i))
+        // Seçili yıl bu şirkette yoksa, mizanı olan ilk yıla geçir ki veri gelsin
+        if (years.length > 0 && !years.includes(selectedYear)) {
+          setSelectedYear(years[0])
+        }
       }).catch(() => setAvailableYears(Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)))
     }
   }, [selectedCompanyId, selectedYear, companies, compareYears])
@@ -48,13 +53,19 @@ export default function GelirTablosuRaporlari() {
   }, [compareYears])
 
   useEffect(() => {
-    if (selectedNotCode && selectedCompanyId) {
-      loadNotCodeDetails(selectedCompanyId, selectedNotCode, selectedYear)
-    } else {
+    if (!selectedNotCode || !selectedCompanyId) {
       setNotCodeDetails(null)
+      setNotCodeDetailsYear2(null)
+      return
+    }
+    if (compareYears && selectedCompanyId && compareYear1 !== compareYear2) {
+      loadNotCodeDetailsCompare(selectedCompanyId, selectedNotCode, compareYear1, compareYear2)
+    } else {
+      setNotCodeDetailsYear2(null)
+      loadNotCodeDetails(selectedCompanyId, selectedNotCode, selectedYear)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNotCode, selectedCompanyId, selectedYear])
+  }, [selectedNotCode, selectedCompanyId, selectedYear, compareYears, compareYear1, compareYear2])
 
   const loadCompanies = async () => {
     try {
@@ -131,6 +142,7 @@ export default function GelirTablosuRaporlari() {
     setNotCodeDetailsLoading(true)
     setError(null)
     setNotCodeDetails(null)
+    setNotCodeDetailsYear2(null)
     try {
       const response = await gelirTablosuApi.getNotCodeDetails(companyId, notCode, year)
       const responseData = response.data as any
@@ -156,10 +168,44 @@ export default function GelirTablosuRaporlari() {
     }
   }
 
+  const loadNotCodeDetailsCompare = async (companyId: number, notCode: string, year1: number, year2: number) => {
+    setNotCodeDetailsLoading(true)
+    setError(null)
+    setNotCodeDetails(null)
+    setNotCodeDetailsYear2(null)
+    try {
+      const [res1, res2] = await Promise.all([
+        gelirTablosuApi.getNotCodeDetails(companyId, notCode, year1),
+        gelirTablosuApi.getNotCodeDetails(companyId, notCode, year2)
+      ])
+      const toDetails = (responseData: any, year: number): NotCodeDetailsData => ({
+        NotCode: responseData.NotCode || responseData.notCode || notCode,
+        Year: responseData.Year || responseData.year || year,
+        Periods: responseData.Periods || responseData.periods || [],
+        Accounts: (responseData.Accounts || responseData.accounts || []).map((item: any) => ({
+          AccountCode: item.AccountCode || item.accountCode || '',
+          AccountName: item.AccountName || item.accountName || '',
+          Values: item.Values || item.values || {},
+          Total: item.Total || item.total || 0
+        }))
+      })
+      setNotCodeDetails(toDetails(res1.data, year1))
+      setNotCodeDetailsYear2(toDetails(res2.data, year2))
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'NOT detayları yüklenirken bir hata oluştu'
+      setError(errorMessage)
+      setNotCodeDetails(null)
+      setNotCodeDetailsYear2(null)
+    } finally {
+      setNotCodeDetailsLoading(false)
+    }
+  }
+
   const getAllNotCodes = (): string[] => {
-    if (!data || !data.items) return []
+    const source = multiYearData ? multiYearData[0] : data
+    if (!source || !source.items) return []
     const notCodes = new Set<string>()
-    data.items.forEach(item => {
+    source.items.forEach((item: GelirTablosuItem) => {
       if (item.NotCode && item.NotCode.trim() !== '') {
         notCodes.add(item.NotCode)
       }
@@ -223,6 +269,65 @@ export default function GelirTablosuRaporlari() {
                 </tr>
               )
             })}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  const renderNotCodeDetailsCompare = (d1: NotCodeDetailsData, d2: NotCodeDetailsData) => {
+    const map1 = new Map(d1.Accounts.map(a => [a.AccountCode, a]))
+    const map2 = new Map(d2.Accounts.map(a => [a.AccountCode, a]))
+    const allCodes = new Set([...map1.keys(), ...map2.keys()])
+    const sortedCodes = Array.from(allCodes).sort()
+    if (sortedCodes.length === 0) {
+      return (
+        <div className="p-6 text-center text-gray-400">Bu NOT kodu için alt hesap bulunamadı.</div>
+      )
+    }
+    return (
+      <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
+        <table className="text-sm border-collapse table-fixed" style={{ minWidth: 520, width: 'max-content' }}>
+          <colgroup>
+            <col style={{ width: 100 }} />
+            <col style={{ width: 220 }} />
+            <col style={{ width: 120 }} />
+            <col style={{ width: 120 }} />
+          </colgroup>
+          <thead>
+            <tr className="bg-gray-800 text-gray-300">
+              <th className="py-2 px-3 text-left border border-gray-700">Hesap Kodu</th>
+              <th className="py-2 px-3 text-left border border-gray-700">Hesap Adı</th>
+              <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d1.Year} Toplam TL</th>
+              <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d2.Year} Toplam TL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedCodes.map((code) => {
+              const acc1 = map1.get(code)
+              const acc2 = map2.get(code)
+              const total1 = acc1?.Total ?? 0
+              const total2 = acc2?.Total ?? 0
+              const name = acc1?.AccountName ?? acc2?.AccountName ?? ''
+              return (
+                <tr key={code} className="hover:bg-gray-900/50 border-b border-gray-800">
+                  <td className="py-2 px-3 border border-gray-700 text-white font-mono text-xs">{code}</td>
+                  <td className="py-2 px-3 border border-gray-700 text-gray-300 text-xs truncate" title={name}>{name}</td>
+                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total1 < 0 ? 'text-red-400' : 'text-gray-300'}`} style={{ whiteSpace: 'nowrap' }}>{formatBalance(total1)}</td>
+                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total2 < 0 ? 'text-red-400' : 'text-gray-300'}`} style={{ whiteSpace: 'nowrap' }}>{formatBalance(total2)}</td>
+                </tr>
+              )
+            })}
+            <tr className="bg-yellow-500/30 font-bold border-t-2 border-gray-600">
+              <td className="py-2 px-3 border border-gray-700 text-yellow-200 font-mono text-xs">TOPLAM</td>
+              <td className="py-2 px-3 border border-gray-700 text-yellow-200 text-xs">{selectedNotCode} ile başlayan hesapların toplamı</td>
+              <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${d1.Accounts.reduce((s, a) => s + (a.Total || 0), 0) < 0 ? 'text-red-400' : 'text-yellow-200'}`} style={{ whiteSpace: 'nowrap' }}>
+                {formatBalance(d1.Accounts.reduce((s, a) => s + (a.Total || 0), 0))}
+              </td>
+              <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${d2.Accounts.reduce((s, a) => s + (a.Total || 0), 0) < 0 ? 'text-red-400' : 'text-yellow-200'}`} style={{ whiteSpace: 'nowrap' }}>
+                {formatBalance(d2.Accounts.reduce((s, a) => s + (a.Total || 0), 0))}
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -452,10 +557,59 @@ export default function GelirTablosuRaporlari() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
         </div>
       ) : multiYearData ? (
-        <div className="card p-0 overflow-hidden flex-1 min-h-0 flex flex-col">
-          <div className="flex-1 min-h-0 overflow-auto p-6">
-            {renderGelirTablosuCompare()}
-          </div>
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Yıl karşılaştırmasında da NOT sekmeleri */}
+          {getAllNotCodes().length > 0 && (
+            <div className="card p-0 flex-shrink-0">
+              <div className="flex items-center border-b border-gray-700 overflow-x-auto">
+                {getAllNotCodes().map((notCode) => {
+                  const isActive = selectedNotCode === notCode
+                  return (
+                    <button
+                      key={notCode}
+                      onClick={() => {
+                        const newValue = isActive ? null : notCode
+                        setSelectedNotCode(newValue)
+                      }}
+                      className={`px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+                        isActive
+                          ? 'border-primary-500 text-primary-400 bg-primary-500/10'
+                          : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
+                      }`}
+                    >
+                      NOT: {notCode}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {/* NOT seçiliyse: iki yıl karşılaştırmalı NOT detayı; değilse ana karşılaştırma tablosu */}
+          {selectedNotCode ? (
+            <div className="card p-0 overflow-hidden flex-1 min-h-0 flex flex-col">
+              <div className="p-4 border-b border-gray-700">
+                <h2 className="text-lg font-bold text-white">NOT: {selectedNotCode} - Yıllara Göre Alt Hesaplar</h2>
+              </div>
+              {notCodeDetailsLoading ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                  <span className="ml-3 text-gray-400">Yükleniyor...</span>
+                </div>
+              ) : notCodeDetails && notCodeDetailsYear2 ? (
+                renderNotCodeDetailsCompare(notCodeDetails, notCodeDetailsYear2)
+              ) : !notCodeDetails && !notCodeDetailsLoading ? (
+                <div className="card text-center py-12">
+                  <p className="text-gray-400">Bu NOT kodu için veri bulunamadı.</p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="card p-0 overflow-hidden flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 overflow-auto p-6">
+                {renderGelirTablosuCompare()}
+              </div>
+            </div>
+          )}
         </div>
       ) : !data || (!data.periods || data.periods.length === 0) ? (
         <div className="card text-center py-12 flex-shrink-0">

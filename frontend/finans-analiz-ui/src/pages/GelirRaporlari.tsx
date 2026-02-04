@@ -72,6 +72,7 @@ export default function GelirRaporlari() {
       mizanApi.getPeriods(selectedCompanyId).then(res => {
         const years = [...new Set((res.data || []).map((p: { year: number }) => p.year))].sort((a, b) => b - a)
         setAvailableYears(years.length > 0 ? years : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i))
+        if (years.length > 0 && !years.includes(selectedYear)) setSelectedYear(years[0])
       }).catch(() => setAvailableYears(Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)))
     }
   }, [selectedCompanyId, selectedYear, companies, compareYears])
