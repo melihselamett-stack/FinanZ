@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { companyApi, bilancoApi, bilancoParameterApi, mizanApi, Company, BilancoData, BilancoItem, NotCodeDetailsData, NotCodeDetail, BilancoParameter, BilancoReportRow, BilancoReportRowsData } from '../services/api'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 export default function BilancoRaporlari() {
   const [companies, setCompanies] = useState<Company[]>([])
@@ -12,12 +12,13 @@ export default function BilancoRaporlari() {
   const [error, setError] = useState<string | null>(null)
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
   const [compareYears, setCompareYears] = useState(false)
-  const [compareYear1, setCompareYear1] = useState<number>(new Date().getFullYear())
-  const [compareYear2, setCompareYear2] = useState<number>(new Date().getFullYear() - 1)
+  const [selectedCompareYears, setSelectedCompareYears] = useState<number[]>([])
+  const [showCompareYearsDropdown, setShowCompareYearsDropdown] = useState(false)
   const [availableYears, setAvailableYears] = useState<number[]>([])
-  const [multiYearData, setMultiYearData] = useState<[BilancoData, BilancoData] | null>(null)
+  const [multiYearData, setMultiYearData] = useState<BilancoData[] | null>(null)
   const [selectedNotCode, setSelectedNotCode] = useState<string | null>(null)
   const [notCodeDetails, setNotCodeDetails] = useState<NotCodeDetailsData | null>(null)
+  const [notCodeDetailsList, setNotCodeDetailsList] = useState<NotCodeDetailsData[]>([])
   const [notCodeDetailsLoading, setNotCodeDetailsLoading] = useState(false)
   // Bilanço Parametre Ayarları state'leri
   const [parameters, setParameters] = useState<BilancoParameter[]>([])
@@ -70,16 +71,19 @@ export default function BilancoRaporlari() {
   }, [compareYears])
 
   useEffect(() => {
-    console.log('useEffect tetiklendi:', { selectedNotCode, selectedCompanyId, selectedYear })
-    if (selectedNotCode && selectedCompanyId) {
-      console.log('loadNotCodeDetails çağrılıyor')
-      loadNotCodeDetails(selectedCompanyId, selectedNotCode, selectedYear)
-    } else {
-      console.log('selectedNotCode veya selectedCompanyId yok, notCodeDetails temizleniyor')
+    if (!selectedNotCode || !selectedCompanyId) {
       setNotCodeDetails(null)
+      setNotCodeDetailsList([])
+      return
+    }
+    if (compareYears && selectedCompareYears.length > 0) {
+      loadNotCodeDetailsCompare(selectedCompanyId, selectedNotCode, selectedCompareYears)
+    } else {
+      setNotCodeDetailsList([])
+      loadNotCodeDetails(selectedCompanyId, selectedNotCode, selectedYear)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNotCode, selectedCompanyId, selectedYear])
+  }, [selectedNotCode, selectedCompanyId, selectedYear, compareYears, selectedCompareYears])
 
   const loadCompanies = async () => {
     try {
@@ -133,16 +137,16 @@ export default function BilancoRaporlari() {
   }
 
   const loadCompareYears = async () => {
-    if (!selectedCompanyId || compareYear1 === compareYear2) return
+    if (!selectedCompanyId || selectedCompareYears.length === 0) return
     setDataLoading(true)
     setError(null)
     setMultiYearData(null)
     try {
-      const [res1, res2] = await Promise.all([
-        bilancoApi.getBilanco(selectedCompanyId, compareYear1),
-        bilancoApi.getBilanco(selectedCompanyId, compareYear2)
-      ])
-      const toData = (responseData: any, year: number) => ({
+      const years = [...selectedCompareYears].sort((a, b) => a - b)
+      const responses = await Promise.all(
+        years.map(y => bilancoApi.getBilanco(selectedCompanyId, y))
+      )
+      const toData = (responseData: any, year: number): BilancoData => ({
         year: responseData.Year ?? responseData.year ?? year,
         periods: responseData.Periods ?? responseData.periods ?? [],
         varliklar: (responseData.Varliklar ?? responseData.varliklar ?? []).map((item: any) => ({
@@ -162,7 +166,7 @@ export default function BilancoRaporlari() {
           Values: item.Values ?? item.values ?? {}
         })) as BilancoItem[]
       })
-      setMultiYearData([toData(res1.data, compareYear1), toData(res2.data, compareYear2)])
+      setMultiYearData(responses.map((r, i) => toData(r.data, years[i])))
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Karşılaştırma yüklenirken hata oluştu'
       setError(msg)
@@ -174,7 +178,8 @@ export default function BilancoRaporlari() {
   const loadNotCodeDetails = async (companyId: number, notCode: string, year: number) => {
     setNotCodeDetailsLoading(true)
     setError(null)
-    setNotCodeDetails(null) // Önce temizle
+    setNotCodeDetails(null)
+    setNotCodeDetailsList([])
     try {
       console.log('NOT detayları yükleniyor:', { companyId, notCode, year })
       const response = await bilancoApi.getNotCodeDetails(companyId, notCode, year)
@@ -198,6 +203,41 @@ export default function BilancoRaporlari() {
       setError(errorMessage)
       console.error('NOT detayları yüklenirken hata:', err)
       setNotCodeDetails(null)
+    } finally {
+      setNotCodeDetailsLoading(false)
+    }
+  }
+
+  const loadNotCodeDetailsCompare = async (companyId: number, notCode: string, years: number[]) => {
+    if (years.length === 0) {
+      setNotCodeDetailsList([])
+      return
+    }
+    setNotCodeDetailsLoading(true)
+    setError(null)
+    setNotCodeDetails(null)
+    setNotCodeDetailsList([])
+    try {
+      const sortedYears = [...years].sort((a, b) => a - b)
+      const responses = await Promise.all(
+        sortedYears.map(y => bilancoApi.getNotCodeDetails(companyId, notCode, y))
+      )
+      const toDetails = (responseData: any, year: number): NotCodeDetailsData => ({
+        NotCode: responseData.NotCode || responseData.notCode || notCode,
+        Year: responseData.Year || responseData.year || year,
+        Periods: responseData.Periods || responseData.periods || [],
+        Accounts: (responseData.Accounts || responseData.accounts || []).map((item: any) => ({
+          AccountCode: item.AccountCode || item.accountCode || '',
+          AccountName: item.AccountName || item.accountName || '',
+          Values: item.Values || item.values || {},
+          Total: item.Total || item.total || 0
+        }))
+      })
+      setNotCodeDetailsList(responses.map((r, i) => toDetails(r.data, sortedYears[i])))
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'NOT detayları yüklenirken bir hata oluştu'
+      setError(errorMessage)
+      setNotCodeDetailsList([])
     } finally {
       setNotCodeDetailsLoading(false)
     }
@@ -284,9 +324,12 @@ export default function BilancoRaporlari() {
       // Rapor satırlarını yeniden yükle (yeni parametreler burada görünecek)
       await loadReportRows(selectedCompanyId, selectedYear)
       
-      // Eğer bir NOT kodu seçiliyse, NOT detaylarını da yeniden yükle
       if (selectedNotCode) {
-        await loadNotCodeDetails(selectedCompanyId, selectedNotCode, selectedYear)
+        if (compareYears && selectedCompareYears.length > 0) {
+          await loadNotCodeDetailsCompare(selectedCompanyId, selectedNotCode, selectedCompareYears)
+        } else {
+          await loadNotCodeDetails(selectedCompanyId, selectedNotCode, selectedYear)
+        }
       }
       
       // Eğer rapor satırları bölümü açıksa, otomatik olarak göster
@@ -416,93 +459,398 @@ export default function BilancoRaporlari() {
   }
 
   const getAllNotCodes = (): string[] => {
-    if (!data) return []
+    const source = multiYearData ? multiYearData[0] : data
+    if (!source) return []
     const notCodes = new Set<string>()
-    
-    // Varlıklar ve kaynaklardan NOT kodlarını topla
-    const allItems = (data.varliklar || []).concat(data.kaynaklar || [])
-    allItems.forEach(item => {
-      if (item.NotCode) {
-        notCodes.add(item.NotCode)
-      }
+    const allItems = (source.varliklar || []).concat(source.kaynaklar || [])
+    allItems.forEach((item: BilancoItem) => {
+      if (item.NotCode) notCodes.add(item.NotCode)
     })
-    
     return Array.from(notCodes).sort()
   }
 
-  const exportToExcel = () => {
-    if (!data || !data.varliklar || !data.kaynaklar) {
-      setError('Export edilecek veri bulunamadı')
+  const formatNum = (v: number) => (v == null || Number.isNaN(v) ? 0 : v)
+
+  const exportToExcel = async () => {
+    const isCompare = compareYears && multiYearData && multiYearData.length > 0
+    const singleData = !isCompare && data && data.varliklar && data.kaynaklar
+
+    if (!singleData && !isCompare) {
+      setError('Export edilecek veri bulunamadı. Tek yıl için yıl seçin; karşılaştırma için "Yılları karşılaştır"ı işaretleyip yılları seçin.')
       return
     }
 
-    const excelData: any[] = []
-    
-    // Başlık satırı
-    const headers = ['Hesap Adı', 'NOT']
-    data.periods.forEach(period => {
-      headers.push(`${months[period.month - 1]} TL`)
-    })
-    headers.push('Toplam TL')
-    
-    excelData.push(headers)
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Bilanço', { views: [{ state: 'frozen', ySplit: 5, activeCell: 'A6' }] })
 
-    // VARLIKLAR bölümü
-    excelData.push(['VARLIKLAR', ''])
-    data.varliklar.forEach(item => {
-      const row: any[] = [item.Name, item.NotCode || '']
-      data.periods.forEach(period => {
-        const value = item.Values[`${period.month}`] || 0
-        row.push(value)
+    const companyName = selectedCompany?.companyName || 'Şirket'
+    const headerFont = { name: 'Calibri', size: 11, bold: true }
+    const titleFont = { name: 'Calibri', size: 14, bold: true }
+    const thinBorder = { style: 'thin' as const }
+    const borderAll = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder }
+    const numFmt = '#,##0.00'
+
+    let dataStartRow = 1
+
+    if (isCompare && multiYearData) {
+      const years = [...multiYearData].map(d => d.year).sort((a, b) => a - b)
+      const sortedData = years.map(y => multiYearData!.find(d => d.year === y)!).filter(Boolean) as BilancoData[]
+      const colCountCompare = 2 + years.length
+
+      ws.mergeCells(1, 1, 1, colCountCompare)
+      const titleCell = ws.getCell(1, 1)
+      titleCell.value = companyName
+      titleCell.font = { ...titleFont, size: 16 }
+      titleCell.alignment = { horizontal: 'left' }
+
+      ws.mergeCells(2, 1, 2, colCountCompare)
+      ws.getCell(2, 1).value = 'Bilanço - Yıllar Karşılaştırmalı (IFRS)'
+      ws.getCell(2, 1).font = titleFont
+      ws.getCell(2, 1).alignment = { horizontal: 'left' }
+
+      ws.mergeCells(3, 1, 3, colCountCompare)
+      ws.getCell(3, 1).value = `Yıllar: ${years.join(', ')}`
+      ws.getCell(3, 1).font = headerFont
+      ws.getCell(3, 1).alignment = { horizontal: 'left' }
+      dataStartRow = 5
+
+      // Başlıklar ekrandaki gibi: "2024 Toplam TL", "2025 Toplam TL"
+      const headerRow = ws.addRow(['Hesap Adı', 'NOT', ...years.map(y => `${y} Toplam TL`)])
+      headerRow.font = { ...headerFont, color: { argb: 'FFFFFFFF' } }
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }
+      headerRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+      headerRow.eachCell((cell) => { cell.border = borderAll })
+
+      // Satır sırası ve değerler ekrandaki gibi: ilk yılın satır sırası, her yıl için Total (Hesap Adı+NOT ile eşleşen)
+      const addCompareRows = (itemsPerYear: BilancoItem[][]) => {
+        const rowKey = (it: BilancoItem) => `${it.Name}|${it.NotCode ?? ''}`
+        const mapsPerYear = itemsPerYear.map(arr => {
+          const m = new Map<string, BilancoItem>()
+          arr.forEach(it => m.set(rowKey(it), it))
+          return m
+        })
+        const rowOrder = itemsPerYear[0] || []
+        rowOrder.forEach(it => {
+          const key = rowKey(it)
+          const rowValues: (string | number)[] = [
+            it.Name,
+            it.NotCode ?? '',
+            ...years.map((_, yi) => {
+              const item = mapsPerYear[yi]?.get(key)
+              const total = item?.Values?.Total ?? item?.Values?.['Total']
+              return formatNum(total)
+            })
+          ]
+          const row = ws.addRow(rowValues)
+          row.eachCell((cell, colNumber) => {
+            cell.border = borderAll
+            if (colNumber > 2) cell.numFmt = numFmt
+            if (colNumber === 1) cell.alignment = { horizontal: 'left' }
+            else if (colNumber > 2) cell.alignment = { horizontal: 'right' }
+          })
+          if (it.IsTotal) {
+            row.font = { bold: true }
+            row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
+          } else if (it.IsCategory && !it.NotCode) {
+            row.font = { bold: true }
+            row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+          }
+        })
+      }
+
+      const varlikTitleRow = ws.addRow(['VARLIKLAR', '', ...Array(years.length).fill('')])
+      varlikTitleRow.font = headerFont
+      varlikTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+      varlikTitleRow.eachCell((cell) => { cell.border = borderAll })
+      addCompareRows(sortedData.map(yd => yd.varliklar || []))
+
+      ws.addRow([]).height = 8
+
+      const kaynakTitleRow = ws.addRow(['KAYNAKLAR', '', ...Array(years.length).fill('')])
+      kaynakTitleRow.getCell(1).value = 'KAYNAKLAR'
+      kaynakTitleRow.font = headerFont
+      kaynakTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+      kaynakTitleRow.eachCell((cell) => { cell.border = borderAll })
+      addCompareRows(sortedData.map(yd => yd.kaynaklar || []))
+
+      // Toplam Varlıklar, Toplam Kaynaklar, Dönem Karı (karşılaştırmalı) - yıl sırasına göre
+      const tvRow = ws.addRow(['Toplam Varlıklar', '', ...years.map((_, yi) => formatNum(sortedData[yi]?.varliklar?.find(x => x.IsTotal)?.Values?.Total ?? sortedData[yi]?.varliklar?.find(x => x.IsTotal)?.Values?.['Total']))])
+      tvRow.font = { bold: true }
+      tvRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+      tvRow.eachCell((cell, colNumber) => { cell.border = borderAll; if (colNumber > 2) cell.numFmt = numFmt; cell.alignment = { horizontal: colNumber === 1 ? 'left' : colNumber === 2 ? 'center' : 'right' } })
+      const tkRow = ws.addRow(['Toplam Kaynaklar', '', ...years.map((_, yi) => formatNum(sortedData[yi]?.kaynaklar?.find(x => x.IsTotal)?.Values?.Total ?? sortedData[yi]?.kaynaklar?.find(x => x.IsTotal)?.Values?.['Total']))])
+      tkRow.font = { bold: true }
+      tkRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+      tkRow.eachCell((cell, colNumber) => { cell.border = borderAll; if (colNumber > 2) cell.numFmt = numFmt; cell.alignment = { horizontal: colNumber === 1 ? 'left' : colNumber === 2 ? 'center' : 'right' } })
+      const donemKariCompare = years.map((_, yi) => {
+        const tv = sortedData[yi]?.varliklar?.find(x => x.IsTotal)?.Values?.Total ?? sortedData[yi]?.varliklar?.find(x => x.IsTotal)?.Values?.['Total'] ?? 0
+        const tk = sortedData[yi]?.kaynaklar?.find(x => x.IsTotal)?.Values?.Total ?? sortedData[yi]?.kaynaklar?.find(x => x.IsTotal)?.Values?.['Total'] ?? 0
+        return formatNum(tv + tk)
       })
-      row.push(item.Values.Total || 0)
-      excelData.push(row)
-    })
+      const dkRow = ws.addRow(['Dönem Karı', '', ...donemKariCompare])
+      dkRow.font = { bold: true }
+      dkRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D32' } }
+      dkRow.eachCell((cell, colNumber) => { cell.border = borderAll; if (colNumber > 2) cell.numFmt = numFmt; cell.alignment = { horizontal: colNumber === 1 ? 'left' : colNumber === 2 ? 'center' : 'right' } })
 
-    // Boş satır
-    excelData.push([])
+      ws.columns = [
+        { width: 38 },
+        { width: 8 },
+        ...years.map(() => ({ width: 16 }))
+      ]
+    } else if (data) {
+      ws.mergeCells(1, 1, 1, 2 + (data.periods?.length || 0) + 1)
+      ws.getCell(1, 1).value = companyName
+      ws.getCell(1, 1).font = { ...titleFont, size: 16 }
+      ws.getCell(1, 1).alignment = { horizontal: 'left' }
 
-    // KAYNAKLAR bölümü
-    excelData.push(['KAYNAKLAR', ''])
-    data.kaynaklar.forEach(item => {
-      const row: any[] = [item.Name, item.NotCode || '']
-      data.periods.forEach(period => {
-        const value = item.Values[`${period.month}`] || 0
-        row.push(value)
+      ws.mergeCells(2, 1, 2, 2 + (data.periods?.length || 0) + 1)
+      ws.getCell(2, 1).value = 'Bilanço (IFRS)'
+      ws.getCell(2, 1).font = titleFont
+      ws.getCell(2, 1).alignment = { horizontal: 'left' }
+
+      ws.mergeCells(3, 1, 3, 2 + (data.periods?.length || 0) + 1)
+      ws.getCell(3, 1).value = `Rapor tarihi: ${data.year}`
+      ws.getCell(3, 1).font = headerFont
+      ws.getCell(3, 1).alignment = { horizontal: 'left' }
+      dataStartRow = 5
+
+      const periods = data.periods || []
+      const headerRow = ws.addRow([
+        'Hesap Adı',
+        'NOT',
+        ...periods.map((p: { month: number }) => p.month === 0 ? 'Açılış TL' : `${months[p.month - 1]} TL`),
+        'Toplam TL'
+      ])
+      headerRow.font = { ...headerFont, color: { argb: 'FFFFFFFF' } }
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }
+      headerRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+      headerRow.eachCell((cell) => { cell.border = borderAll })
+
+      const addRows = (items: BilancoItem[]) => {
+        items.forEach(item => {
+          const row = ws.addRow([
+            item.Name,
+            item.NotCode ?? '',
+            ...periods.map((p: { month: number }) => formatNum(item.Values[`${p.month}`])),
+            formatNum(item.Values.Total)
+          ])
+          const isTotal = item.IsTotal
+          const isCategory = item.IsCategory && !item.NotCode
+          row.eachCell((cell, colNumber) => {
+            cell.border = borderAll
+            if (colNumber > 2) cell.numFmt = numFmt
+            if (colNumber === 1) cell.alignment = { horizontal: 'left' }
+            else if (colNumber > 2) cell.alignment = { horizontal: 'right' }
+          })
+          if (isTotal) {
+            row.font = { bold: true }
+            row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
+          } else if (isCategory) {
+            row.font = { bold: true }
+            row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+          }
+        })
+      }
+
+      const varlikTitle = ws.addRow(['VARLIKLAR', ''])
+      varlikTitle.font = headerFont
+      varlikTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+      varlikTitle.eachCell((cell) => { cell.border = borderAll })
+      addRows(data.varliklar)
+
+      ws.addRow([]).height = 8
+
+      const kaynakTitle = ws.addRow(['KAYNAKLAR', ''])
+      kaynakTitle.font = headerFont
+      kaynakTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+      kaynakTitle.eachCell((cell) => { cell.border = borderAll })
+      addRows(data.kaynaklar)
+
+      // Toplam Varlıklar, Toplam Kaynaklar, Dönem Karı (tek yıl)
+      const toplamVarlik = data.varliklar?.find(x => x.IsTotal)?.Values ?? {}
+      const toplamKaynak = data.kaynaklar?.find(x => x.IsTotal)?.Values ?? {}
+      const donemKariValues: { [key: string]: number } = {}
+      periods.forEach((p: { month: number }) => {
+        donemKariValues[`${p.month}`] = (toplamVarlik[`${p.month}`] ?? 0) + (toplamKaynak[`${p.month}`] ?? 0)
       })
-      row.push(item.Values.Total || 0)
-      excelData.push(row)
-    })
+      donemKariValues['Total'] = (toplamVarlik.Total ?? 0) + (toplamKaynak.Total ?? 0)
 
-    // Worksheet oluştur
-    const ws = XLSX.utils.aoa_to_sheet(excelData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Bilanço')
+      const tvRow = ws.addRow(['Toplam Varlıklar', '', ...periods.map((p: { month: number }) => formatNum(toplamVarlik[`${p.month}`])), formatNum(toplamVarlik.Total)])
+      tvRow.font = { bold: true }
+      tvRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+      tvRow.eachCell((cell, colNumber) => { cell.border = borderAll; if (colNumber > 2) cell.numFmt = numFmt; cell.alignment = { horizontal: colNumber === 1 ? 'left' : colNumber === 2 ? 'center' : 'right' } })
+      const tkRow = ws.addRow(['Toplam Kaynaklar', '', ...periods.map((p: { month: number }) => formatNum(toplamKaynak[`${p.month}`])), formatNum(toplamKaynak.Total)])
+      tkRow.font = { bold: true }
+      tkRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }
+      tkRow.eachCell((cell, colNumber) => { cell.border = borderAll; if (colNumber > 2) cell.numFmt = numFmt; cell.alignment = { horizontal: colNumber === 1 ? 'left' : colNumber === 2 ? 'center' : 'right' } })
+      const dkRow = ws.addRow(['Dönem Karı', '', ...periods.map((p: { month: number }) => formatNum(donemKariValues[`${p.month}`])), formatNum(donemKariValues['Total'])])
+      dkRow.font = { bold: true }
+      dkRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D32' } }
+      dkRow.eachCell((cell, colNumber) => { cell.border = borderAll; if (colNumber > 2) cell.numFmt = numFmt; cell.alignment = { horizontal: colNumber === 1 ? 'left' : colNumber === 2 ? 'center' : 'right' } })
 
-    // Kolon genişliklerini ayarla
-    const colWidths = [{ wch: 40 }, { wch: 8 }] // Hesap Adı, NOT
-    data.periods.forEach(() => colWidths.push({ wch: 18 })) // Her ay
-    colWidths.push({ wch: 18 }) // Toplam
-    ws['!cols'] = colWidths
+      ws.columns = [
+        { width: 38 },
+        { width: 8 },
+        ...(periods.length + 1) ? Array(periods.length + 1).fill({ width: 14 }) : [{ width: 14 }]
+      ]
+    }
 
-    // Başlık ve toplam satırlarını formatla
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
-    for (let row = 0; row <= range.e.r; row++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: row, c: 0 })
-      const cell = ws[cellAddress]
-      if (cell && (cell.v === 'VARLIKLAR' || cell.v === 'KAYNAKLAR' || 
-          (typeof cell.v === 'string' && cell.v.includes('TOPLAM')))) {
-        if (!cell.s) cell.s = {}
-        cell.s.font = { bold: true }
-        cell.s.fill = { fgColor: { rgb: 'FFFF00' } }
+    // NOT detaylarını aynı dosyada ayrı sheetler olarak ekle
+    const notCodes = getAllNotCodes()
+    const companyId = selectedCompanyId!
+
+    for (const notCode of notCodes) {
+      try {
+        if (isCompare && multiYearData?.length) {
+          const years = multiYearData.map(d => d.year).sort((a, b) => a - b)
+          const responses = await Promise.all(
+            years.map(y => bilancoApi.getNotCodeDetails(companyId, notCode, y))
+          )
+          const detailsList = responses.map((r, i) => {
+            const d = r.data as any
+            return {
+              NotCode: d.NotCode ?? d.notCode ?? notCode,
+              Year: d.Year ?? d.year ?? years[i],
+              Periods: d.Periods ?? d.periods ?? [],
+              Accounts: (d.Accounts ?? d.accounts ?? []).map((a: any) => ({
+                AccountCode: a.AccountCode ?? a.accountCode ?? '',
+                AccountName: a.AccountName ?? a.accountName ?? '',
+                Values: a.Values ?? a.values ?? {},
+                Total: a.Total ?? a.total ?? 0
+              }))
+            } as NotCodeDetailsData
+          })
+          if (detailsList.every(d => !d.Accounts?.length)) continue
+          const sheetName = `NOT ${notCode}`.slice(0, 31)
+          const notWs = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: 4, activeCell: 'A5' }] })
+          notWs.mergeCells(1, 1, 1, 2 + years.length)
+          notWs.getCell(1, 1).value = companyName
+          notWs.getCell(1, 1).font = { ...titleFont, size: 16 }
+          notWs.getCell(2, 1).value = `NOT ${notCode} - Yıllar Karşılaştırmalı`
+          notWs.getCell(2, 1).font = titleFont
+          notWs.mergeCells(2, 1, 2, 2 + years.length)
+          notWs.getCell(3, 1).value = `Yıllar: ${years.join(', ')}`
+          notWs.getCell(3, 1).font = headerFont
+          notWs.mergeCells(3, 1, 3, 2 + years.length)
+          const notHeaderRow = notWs.addRow(['Hesap Kodu', 'Hesap Adı', ...years.map(y => `${y} Toplam TL`)])
+          notHeaderRow.font = { ...headerFont, color: { argb: 'FFFFFFFF' } }
+          notHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }
+          notHeaderRow.eachCell((cell) => { cell.border = borderAll })
+          const allCodes = new Set<string>()
+          detailsList.forEach(d => d.Accounts?.forEach(a => allCodes.add(a.AccountCode)))
+          const sortedCodes = Array.from(allCodes).sort()
+          const maps = detailsList.map(d => new Map(d.Accounts?.map(a => [a.AccountCode, a]) ?? []))
+          for (const code of sortedCodes) {
+            const name = detailsList[0]?.Accounts?.find(a => a.AccountCode === code)?.AccountName ?? maps.find(m => m.get(code))?.get(code)?.AccountName ?? ''
+            const rowValues: (string | number)[] = [code, name]
+            detailsList.forEach((d, i) => {
+              const total = maps[i]?.get(code)?.Total ?? 0
+              rowValues.push(total)
+            })
+            const row = notWs.addRow(rowValues)
+            row.eachCell((cell, colNumber) => {
+              cell.border = borderAll
+              if (colNumber > 2) cell.numFmt = numFmt
+              if (colNumber <= 2) cell.alignment = { horizontal: 'left' }
+              else cell.alignment = { horizontal: 'right' }
+            })
+          }
+          const totalRow = notWs.addRow([
+            'TOPLAM',
+            `NOT ${notCode} genel toplamı`,
+            ...detailsList.map(d => d.Accounts?.reduce((s, a) => s + (a.Total || 0), 0) ?? 0)
+          ])
+          totalRow.font = { bold: true }
+          totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
+          totalRow.eachCell((cell, colNumber) => {
+            cell.border = borderAll
+            if (colNumber > 2) cell.numFmt = numFmt
+            cell.alignment = colNumber <= 2 ? { horizontal: 'left' } : { horizontal: 'right' }
+          })
+          notWs.columns = [{ width: 16 }, { width: 36 }, ...years.map(() => ({ width: 14 }))]
+        } else if (data) {
+          const res = await bilancoApi.getNotCodeDetails(companyId, notCode, data.year)
+          const d = res.data as any
+          const detail: NotCodeDetailsData = {
+            NotCode: d.NotCode ?? d.notCode ?? notCode,
+            Year: d.Year ?? d.year ?? data.year,
+            Periods: d.Periods ?? d.periods ?? data.periods ?? [],
+            Accounts: (d.Accounts ?? d.accounts ?? []).map((a: any) => ({
+              AccountCode: a.AccountCode ?? a.accountCode ?? '',
+              AccountName: a.AccountName ?? a.accountName ?? '',
+              Values: a.Values ?? a.values ?? {},
+              Total: a.Total ?? a.total ?? 0
+            }))
+          }
+          if (!detail.Accounts?.length) continue
+          const sheetName = `NOT ${notCode}`.slice(0, 31)
+          const notWs = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: 4, activeCell: 'A5' }] })
+          const periods = detail.Periods || []
+          notWs.mergeCells(1, 1, 1, 2 + periods.length + 1)
+          notWs.getCell(1, 1).value = companyName
+          notWs.getCell(1, 1).font = { ...titleFont, size: 16 }
+          notWs.getCell(2, 1).value = `NOT ${notCode}`
+          notWs.getCell(2, 1).font = titleFont
+          notWs.mergeCells(2, 1, 2, 2 + periods.length + 1)
+          notWs.getCell(3, 1).value = `Rapor yılı: ${detail.Year}`
+          notWs.getCell(3, 1).font = headerFont
+          notWs.mergeCells(3, 1, 3, 2 + periods.length + 1)
+          const notHeaderRow = notWs.addRow([
+            'Hesap Kodu',
+            'Hesap Adı',
+            ...periods.map((p: { month: number }) => p.month === 0 ? 'Açılış TL' : `${months[p.month - 1]} TL`),
+            'Toplam TL'
+          ])
+          notHeaderRow.font = { ...headerFont, color: { argb: 'FFFFFFFF' } }
+          notHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }
+          notHeaderRow.eachCell((cell) => { cell.border = borderAll })
+          for (const acc of detail.Accounts) {
+            const row = notWs.addRow([
+              acc.AccountCode,
+              acc.AccountName,
+              ...periods.map((p: { month: number }) => formatNum(acc.Values[`${p.month}`])),
+              formatNum(acc.Total)
+            ])
+            row.eachCell((cell, colNumber) => {
+              cell.border = borderAll
+              if (colNumber > 2) cell.numFmt = numFmt
+              if (colNumber <= 2) cell.alignment = { horizontal: 'left' }
+              else cell.alignment = { horizontal: 'right' }
+            })
+          }
+          const totalRow = notWs.addRow([
+            'TOPLAM',
+            `NOT ${notCode} genel toplamı`,
+            ...periods.map((p: { month: number }) => detail.Accounts!.reduce((s, a) => s + formatNum(a.Values[`${p.month}`]), 0)),
+            detail.Accounts!.reduce((s, a) => s + (a.Total || 0), 0)
+          ])
+          totalRow.font = { bold: true }
+          totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
+          totalRow.eachCell((cell, colNumber) => {
+            cell.border = borderAll
+            if (colNumber > 2) cell.numFmt = numFmt
+            cell.alignment = colNumber <= 2 ? { horizontal: 'left' } : { horizontal: 'right' }
+          })
+          notWs.columns = [{ width: 16 }, { width: 36 }, ...Array(periods.length + 1).fill({ width: 14 })]
+        }
+      } catch (err) {
+        console.warn(`NOT ${notCode} export atlandı:`, err)
       }
     }
 
-    // Dosya adı
-    const companyName = selectedCompany?.companyName || 'Bilanco'
-    const fileName = `${companyName}_Bilanco_${data.year}.xlsx`
+    const fileName = isCompare && multiYearData?.length
+      ? `${companyName}_Bilanco_Karsilastirma_${multiYearData.map(d => d.year).sort((a, b) => a - b).join('_')}.xlsx`
+      : `${companyName}_Bilanco_${data?.year ?? selectedYear}.xlsx`
 
-    XLSX.writeFile(wb, fileName)
+    const buffer = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.click()
+    URL.revokeObjectURL(url)
+    setError(null)
   }
 
   const renderBilancoSection = (
@@ -656,82 +1004,140 @@ export default function BilancoRaporlari() {
     )
   }
 
-  const renderBilancoSectionCompare = (
-    items1: BilancoItem[],
-    items2: BilancoItem[],
-    data1: BilancoData,
-    data2: BilancoData,
-    title: string
-  ) => {
-    const map2ByKey = new Map<string, BilancoItem>()
-    items2.forEach(it => map2ByKey.set(`${it.Name}|${it.NotCode ?? ''}`, it))
-    const merged = items1.map(it1 => {
-      const key = `${it1.Name}|${it1.NotCode ?? ''}`
-      return { it1, it2: map2ByKey.get(key) }
+  const renderBilancoSectionCompare = (dataArr: BilancoData[], title: string) => {
+    const itemsKey = title === 'VARLIKLAR' ? 'varliklar' : 'kaynaklar'
+    const items0 = (dataArr[0]?.[itemsKey] || []) as BilancoItem[]
+    const mapsByKey = dataArr.map(d => {
+      const m = new Map<string, BilancoItem>()
+      ;(d[itemsKey] || []).forEach((it: BilancoItem) => m.set(`${it.Name}|${it.NotCode ?? ''}`, it))
+      return m
     })
+    const colWidth = 120
     return (
       <div className="space-y-1">
         <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
-        <table className="w-full text-sm border-collapse table-fixed min-w-[500px]">
-          <colgroup>
-            <col style={{ width: '220px', minWidth: '220px' }} />
-            <col style={{ width: '52px', minWidth: '52px' }} />
-            <col style={{ width: '120px', minWidth: '120px' }} />
-            <col style={{ width: '120px', minWidth: '120px' }} />
-          </colgroup>
-          <thead>
-            <tr className="bg-gray-800 text-gray-300">
-              <th className="py-2 px-3 text-left border border-gray-700">Hesap Adı</th>
-              <th className="py-2 px-3 text-center border border-gray-700">NOT</th>
-              <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{data1.year} Toplam TL</th>
-              <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{data2.year} Toplam TL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {merged.map(({ it1, it2 }, index) => {
-              const isCategory = it1.IsCategory && !it1.NotCode
-              const isTotal = it1.IsTotal
-              const isSubTotal = it1.IsCategory && it1.NotCode === null && index > 0 && items1[index - 1]?.NotCode
-              const v2 = it2?.Values ?? {}
-              const total1 = it1.Values.Total ?? 0
-              const total2 = v2.Total ?? 0
-              const neg1 = total1 < 0
-              const neg2 = total2 < 0
-              return (
-                <tr
-                  key={index}
-                  className={`${
-                    isTotal ? 'bg-yellow-500/30 font-bold'
-                      : isCategory || isSubTotal ? 'bg-gray-700/50 font-bold' : 'hover:bg-gray-900/50'
-                  }`}
-                >
-                  <td className="py-2 px-3 border border-gray-700 truncate max-w-[220px] text-white" title={it1.Name}>{it1.Name}</td>
-                  <td className="py-2 px-3 text-center border border-gray-700 text-gray-300">{it1.NotCode ?? ''}</td>
-                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${neg1 ? 'text-red-400' : 'text-gray-300'}`} style={{ whiteSpace: 'nowrap' }}>
-                    {formatBalance(total1)}
-                  </td>
-                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${neg2 ? 'text-red-400' : 'text-gray-300'}`} style={{ whiteSpace: 'nowrap' }}>
-                    {formatBalance(total2)}
-                  </td>
-                </tr>
-              )
-            })}
-            {title === 'KAYNAKLAR' && (() => {
-              const tv1 = data1.varliklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
-              const tk1 = data1.kaynaklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
-              const tv2 = data2.varliklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
-              const tk2 = data2.kaynaklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
-              const donemKari1 = tv1 + tk1
-              const donemKari2 = tv2 + tk2
-              return (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse table-fixed" style={{ minWidth: 280 + dataArr.length * colWidth }}>
+            <colgroup>
+              <col style={{ width: '220px', minWidth: '220px' }} />
+              <col style={{ width: '52px', minWidth: '52px' }} />
+              {dataArr.map((d, i) => (
+                <col key={i} style={{ width: `${colWidth}px`, minWidth: `${colWidth}px` }} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr className="bg-gray-800 text-gray-300">
+                <th className="py-2 px-3 text-left border border-gray-700">Hesap Adı</th>
+                <th className="py-2 px-3 text-center border border-gray-700">NOT</th>
+                {dataArr.map((d, i) => (
+                  <th key={i} className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d.year} Toplam TL</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items0.map((it1, index) => {
+                const isCategory = it1.IsCategory && !it1.NotCode
+                const isTotal = it1.IsTotal
+                const isSubTotal = it1.IsCategory && it1.NotCode === null && index > 0 && items0[index - 1]?.NotCode
+                const key = `${it1.Name}|${it1.NotCode ?? ''}`
+                const totals = dataArr.map((_, i) => mapsByKey[i].get(key)?.Values?.Total ?? 0)
+                return (
+                  <tr
+                    key={index}
+                    className={`${
+                      isTotal ? 'bg-yellow-500/30 font-bold'
+                        : isCategory || isSubTotal ? 'bg-gray-700/50 font-bold' : 'hover:bg-gray-900/50'
+                    }`}
+                  >
+                    <td className="py-2 px-3 border border-gray-700 truncate max-w-[220px] text-white" title={it1.Name}>{it1.Name}</td>
+                    <td className="py-2 px-3 text-center border border-gray-700 text-gray-300">{it1.NotCode ?? ''}</td>
+                    {totals.map((total, i) => (
+                      <td key={i} className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total < 0 ? 'text-red-400' : 'text-gray-300'}`} style={{ whiteSpace: 'nowrap' }}>
+                        {formatBalance(total)}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+              {title === 'KAYNAKLAR' && dataArr.length > 0 && (
                 <tr className="bg-primary-500/20 font-bold border-t-2 border-primary-500/50">
                   <td className="py-2 px-3 border border-gray-700 text-primary-200">Dönem Karı</td>
                   <td className="py-2 px-3 text-center border border-gray-700 text-primary-200"></td>
-                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${donemKari1 < 0 ? 'text-red-400' : 'text-primary-200'}`} style={{ whiteSpace: 'nowrap' }}>{formatBalance(donemKari1)}</td>
-                  <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${donemKari2 < 0 ? 'text-red-400' : 'text-primary-200'}`} style={{ whiteSpace: 'nowrap' }}>{formatBalance(donemKari2)}</td>
+                  {dataArr.map((d, i) => {
+                    const tv = d.varliklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
+                    const tk = d.kaynaklar?.find(x => x.IsTotal)?.Values?.Total ?? 0
+                    const donemKari = tv + tk
+                    return (
+                      <td key={i} className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${donemKari < 0 ? 'text-red-400' : 'text-primary-200'}`} style={{ whiteSpace: 'nowrap' }}>
+                        {formatBalance(donemKari)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  const renderNotCodeDetailsCompare = (list: NotCodeDetailsData[]) => {
+    if (list.length === 0) return <div className="p-6 text-center text-gray-400">Bu NOT kodu için alt hesap bulunamadı.</div>
+    const allCodes = new Set<string>()
+    list.forEach(d => d.Accounts.forEach(a => allCodes.add(a.AccountCode)))
+    const sortedCodes = Array.from(allCodes).sort()
+    const maps = list.map(d => new Map(d.Accounts.map(a => [a.AccountCode, a])))
+    const colWidth = 120
+    return (
+      <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
+        <table className="text-sm border-collapse table-fixed" style={{ minWidth: 320 + list.length * colWidth, width: 'max-content' }}>
+          <colgroup>
+            <col style={{ width: '100px' }} />
+            <col style={{ width: '220px' }} />
+            {list.map((_, i) => (
+              <col key={i} style={{ width: `${colWidth}px` }} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr className="bg-gray-800 text-gray-300">
+              <th className="py-2 px-3 text-left border border-gray-700">Hesap Kodu</th>
+              <th className="py-2 px-3 text-left border border-gray-700">Hesap Adı</th>
+              {list.map((d, i) => (
+                <th key={i} className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d.Year} Toplam TL</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedCodes.map((code) => {
+              const name = list[0]?.Accounts.find(a => a.AccountCode === code)?.AccountName ?? maps.find(m => m.get(code))?.get(code)?.AccountName ?? ''
+              return (
+                <tr key={code} className="hover:bg-gray-900/50 border-b border-gray-800">
+                  <td className="py-2 px-3 border border-gray-700 text-white font-mono text-xs">{code}</td>
+                  <td className="py-2 px-3 border border-gray-700 text-gray-300 text-xs truncate" title={name}>{name}</td>
+                  {maps.map((m, i) => {
+                    const total = m.get(code)?.Total ?? 0
+                    return (
+                      <td key={i} className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total < 0 ? 'text-red-400' : 'text-gray-300'}`} style={{ whiteSpace: 'nowrap' }}>
+                        {formatBalance(total)}
+                      </td>
+                    )
+                  })}
                 </tr>
               )
-            })()}
+            })}
+            <tr className="bg-yellow-500/30 font-bold border-t-2 border-gray-600">
+              <td className="py-2 px-3 border border-gray-700 text-yellow-200 font-mono text-xs">TOPLAM</td>
+              <td className="py-2 px-3 border border-gray-700 text-yellow-200 text-xs">NOT: {selectedNotCode} genel toplamı</td>
+              {list.map((d, i) => {
+                const t = d.Accounts.reduce((s, a) => s + (a.Total || 0), 0)
+                return (
+                  <td key={i} className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${t < 0 ? 'text-red-400' : 'text-yellow-200'}`} style={{ whiteSpace: 'nowrap' }}>
+                    {formatBalance(t)}
+                  </td>
+                )
+              })}
+            </tr>
           </tbody>
         </table>
       </div>
@@ -799,31 +1205,49 @@ export default function BilancoRaporlari() {
           </label>
           {compareYears && (
             <>
-              <select
-                value={compareYear1}
-                onChange={(e) => setCompareYear1(Number(e.target.value))}
-                className="input-field w-auto"
-                title="Yıl 1"
-              >
-                {years.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <span className="text-gray-500">vs</span>
-              <select
-                value={compareYear2}
-                onChange={(e) => setCompareYear2(Number(e.target.value))}
-                className="input-field w-auto"
-                title="Yıl 2"
-              >
-                {years.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowCompareYearsDropdown(!showCompareYearsDropdown)}
+                  className="input-field w-auto min-w-[180px] text-left flex items-center justify-between gap-2"
+                >
+                  <span>
+                    {selectedCompareYears.length === 0
+                      ? 'Yılları seçin...'
+                      : `${selectedCompareYears.length} yıl seçildi (${[...selectedCompareYears].sort((a,b)=>a-b).join(', ')})`}
+                  </span>
+                  <span className="text-gray-500">▼</span>
+                </button>
+                {showCompareYearsDropdown && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowCompareYearsDropdown(false)} />
+                    <div className="absolute left-0 top-full mt-1 z-20 bg-gray-800 border border-gray-600 rounded-lg shadow-xl max-h-60 overflow-y-auto min-w-[200px] py-2">
+                      {years.map((y) => {
+                        const checked = selectedCompareYears.includes(y)
+                        return (
+                          <label key={y} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setSelectedCompareYears(prev =>
+                                  prev.includes(y) ? prev.filter(yr => yr !== y) : [...prev, y].sort((a, b) => a - b)
+                                )
+                              }}
+                              className="rounded border-gray-600"
+                            />
+                            <span className="text-white">{y}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={loadCompareYears}
-                disabled={compareYear1 === compareYear2 || dataLoading}
+                disabled={selectedCompareYears.length === 0 || dataLoading}
                 className="btn-primary"
               >
                 {dataLoading ? 'Yükleniyor...' : 'Karşılaştırmayı Yükle'}
@@ -1391,9 +1815,12 @@ export default function BilancoRaporlari() {
                           // Rapor satırlarını yeniden yükle (yeni parametreler burada görünecek)
                           await loadReportRows(selectedCompanyId, selectedYear)
                           
-                          // Eğer bir NOT kodu seçiliyse, NOT detaylarını da yeniden yükle
                           if (selectedNotCode) {
-                            await loadNotCodeDetails(selectedCompanyId, selectedNotCode, selectedYear)
+                            if (compareYears && selectedCompareYears.length > 0) {
+                              await loadNotCodeDetailsCompare(selectedCompanyId, selectedNotCode, selectedCompareYears)
+                            } else {
+                              await loadNotCodeDetails(selectedCompanyId, selectedNotCode, selectedYear)
+                            }
                           }
                           
                           setEditingReportRow(null)
@@ -1430,14 +1857,58 @@ export default function BilancoRaporlari() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
         </div>
       ) : multiYearData ? (
-        <div className="card p-0 overflow-hidden">
-          <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
-            <div className="p-6 space-y-6 min-w-0">
-              {renderBilancoSectionCompare(multiYearData[0].varliklar, multiYearData[1].varliklar, multiYearData[0], multiYearData[1], 'VARLIKLAR')}
-              <div className="border-t border-gray-700 my-4"></div>
-              {renderBilancoSectionCompare(multiYearData[0].kaynaklar, multiYearData[1].kaynaklar, multiYearData[0], multiYearData[1], 'KAYNAKLAR')}
+        <div className="space-y-0">
+          {/* Yıl karşılaştırmasında da NOT sekmeleri */}
+          {getAllNotCodes().length > 0 && (
+            <div className="card p-0">
+              <div className="flex items-center border-b border-gray-700 overflow-x-auto">
+                {getAllNotCodes().map((notCode) => {
+                  const isActive = selectedNotCode === notCode
+                  return (
+                    <button
+                      key={notCode}
+                      onClick={() => setSelectedNotCode(isActive ? null : notCode)}
+                      className={`px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+                        isActive ? 'border-primary-500 text-primary-400 bg-primary-500/10' : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
+                      }`}
+                    >
+                      NOT: {notCode}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
+          {/* NOT seçiliyse: iki yıl karşılaştırmalı NOT detayı; değilse ana karşılaştırma tablosu */}
+          {selectedNotCode ? (
+            <div className="card p-0 overflow-hidden">
+              <div className="p-4 border-b border-gray-700">
+                <h2 className="text-lg font-bold text-white">NOT: {selectedNotCode} - Yıllara Göre Alt Hesaplar</h2>
+              </div>
+              {notCodeDetailsLoading ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                  <span className="ml-3 text-gray-400">Yükleniyor...</span>
+                </div>
+              ) : notCodeDetailsList.length > 0 ? (
+                renderNotCodeDetailsCompare(notCodeDetailsList)
+              ) : !notCodeDetailsLoading ? (
+                <div className="card text-center py-12">
+                  <p className="text-gray-400">Bu NOT kodu için veri bulunamadı.</p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="card p-0 overflow-hidden">
+              <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
+                <div className="p-6 space-y-6 min-w-0">
+                  {renderBilancoSectionCompare(multiYearData, 'VARLIKLAR')}
+                  <div className="border-t border-gray-700 my-4"></div>
+                  {renderBilancoSectionCompare(multiYearData, 'KAYNAKLAR')}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ) : !data || (!data.periods || data.periods.length === 0) ? (
         <div className="card text-center py-12">

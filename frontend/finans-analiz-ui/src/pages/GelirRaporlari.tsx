@@ -12,10 +12,10 @@ export default function GelirRaporlari() {
   const [error, setError] = useState<string | null>(null)
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
   const [compareYears, setCompareYears] = useState(false)
-  const [compareYear1, setCompareYear1] = useState<number>(new Date().getFullYear())
-  const [compareYear2, setCompareYear2] = useState<number>(new Date().getFullYear() - 1)
+  const [selectedCompareYears, setSelectedCompareYears] = useState<number[]>([])
+  const [showCompareYearsDropdown, setShowCompareYearsDropdown] = useState(false)
   const [availableYears, setAvailableYears] = useState<number[]>([])
-  const [multiYearData, setMultiYearData] = useState<[GiderRaporuData, GiderRaporuData] | null>(null)
+  const [multiYearData, setMultiYearData] = useState<GiderRaporuData[] | null>(null)
   
   const [availableProperties, setAvailableProperties] = useState<PropertyInfo[]>([])
   const [groups, setGroups] = useState<GiderRaporuGroup[]>([])
@@ -459,15 +459,15 @@ export default function GelirRaporlari() {
   }
 
   const loadCompareYears = async () => {
-    if (!selectedCompanyId || groups.length === 0 || compareYear1 === compareYear2) return
+    if (!selectedCompanyId || groups.length === 0 || selectedCompareYears.length === 0) return
     setDataLoading(true)
     setError(null)
     setMultiYearData(null)
     try {
-      const [res1, res2] = await Promise.all([
-        gelirRaporlariApi.getGelirRaporu(selectedCompanyId, compareYear1, groups),
-        gelirRaporlariApi.getGelirRaporu(selectedCompanyId, compareYear2, groups)
-      ])
+      const years = [...selectedCompareYears].sort((a, b) => a - b)
+      const responses = await Promise.all(
+        years.map(y => gelirRaporlariApi.getGelirRaporu(selectedCompanyId, y, groups))
+      )
       const toData = (responseData: any, year: number): GiderRaporuData => ({
         year: responseData.Year ?? responseData.year ?? year,
         periods: responseData.Periods ?? responseData.periods ?? [],
@@ -483,7 +483,7 @@ export default function GelirRaporlari() {
           Total: group.Total ?? group.total ?? {}
         }))
       })
-      setMultiYearData([toData(res1.data, compareYear1), toData(res2.data, compareYear2)])
+      setMultiYearData(responses.map((r, i) => toData(r.data, years[i])))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Karşılaştırma yüklenirken hata oluştu')
     } finally {
@@ -745,51 +745,57 @@ export default function GelirRaporlari() {
   }
 
   const renderRaporCompare = () => {
-    if (!multiYearData || multiYearData[0].groups.length === 0) return null
-    const [d1, d2] = multiYearData
+    if (!multiYearData || multiYearData.length === 0 || multiYearData[0].groups.length === 0) return null
+    const d0 = multiYearData[0]
+    const colWidth = 120
     return (
       <div className="space-y-6">
-        {d1.groups.map((group1, gi) => {
-          const group2 = d2.groups[gi]
-          if (!group2) return null
-          const map2 = new Map<string, GiderRaporuItem>()
-          group2.Items.forEach(it => map2.set(it.Name, it))
-          const merged = group1.Items.map(it1 => ({ it1, it2: map2.get(it1.Name) }))
+        {d0.groups.map((group0, gi) => {
+          const groupDataArr = multiYearData.map(d => d.groups[gi]).filter(Boolean)
+          if (groupDataArr.length === 0) return null
+          const items0 = groupDataArr[0].Items
+          const maps = groupDataArr.map(g => {
+            const m = new Map<string, GiderRaporuItem>()
+            g.Items.forEach(it => m.set(it.Name, it))
+            return m
+          })
           return (
             <div key={gi} className="card">
-              <h3 className="text-lg font-bold text-white mb-4">{group1.Name}</h3>
+              <h3 className="text-lg font-bold text-white mb-4">{group0.Name}</h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse table-fixed min-w-[500px]">
+                <table className="w-full text-sm border-collapse table-fixed" style={{ minWidth: 300 + multiYearData.length * colWidth }}>
                   <colgroup>
                     <col className="w-[300px]" />
-                    <col className="w-[120px]" />
-                    <col className="w-[120px]" />
+                    {multiYearData.map((_, i) => (
+                      <col key={i} style={{ width: colWidth }} />
+                    ))}
                   </colgroup>
                   <thead>
                     <tr className="bg-gray-800 text-gray-300">
                       <th className="py-2 px-3 text-left border border-gray-700">Kalem Adı</th>
-                      <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d1.year} Toplam TL</th>
-                      <th className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d2.year} Toplam TL</th>
+                      {multiYearData.map((d, i) => (
+                        <th key={i} className="py-2 px-3 text-right border border-gray-700 bg-primary-500/20">{d.year} Toplam TL</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {merged.map(({ it1, it2 }, ii) => {
-                      const v2 = it2?.Values ?? {}
-                      const total1 = it1.Values?.Total ?? 0
-                      const total2 = v2.Total ?? 0
+                    {items0.map((it1, ii) => {
+                      const totals = maps.map(m => m.get(it1.Name)?.Values?.Total ?? 0)
                       return (
                         <tr key={ii} className="hover:bg-gray-900/50">
                           <td className="py-2 px-3 border border-gray-700 text-white truncate" title={it1.Name}>{it1.Name}</td>
-                          <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total1 < 0 ? 'text-red-400' : 'text-gray-300'}`}>{formatBalance(total1)}</td>
-                          <td className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total2 < 0 ? 'text-red-400' : 'text-gray-300'}`}>{formatBalance(total2)}</td>
+                          {totals.map((total, i) => (
+                            <td key={i} className={`py-2 px-3 text-right border border-gray-700 font-mono text-xs ${total < 0 ? 'text-red-400' : 'text-gray-300'}`}>{formatBalance(total)}</td>
+                          ))}
                         </tr>
                       )
                     })}
-                    {group1.Total && group2.Total && (
+                    {groupDataArr.every(g => g.Total) && (
                       <tr className="bg-yellow-500/30 font-bold">
                         <td className="py-2 px-3 border border-gray-700 text-yellow-200">TOPLAM</td>
-                        <td className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200">{formatBalance(group1.Total.Total ?? 0)}</td>
-                        <td className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200">{formatBalance(group2.Total.Total ?? 0)}</td>
+                        {groupDataArr.map((g, i) => (
+                          <td key={i} className="py-2 px-3 text-right border border-gray-700 font-mono text-xs text-yellow-200">{formatBalance(g.Total?.Total ?? 0)}</td>
+                        ))}
                       </tr>
                     )}
                   </tbody>
@@ -975,18 +981,29 @@ export default function GelirRaporlari() {
           </label>
           {compareYears && (
             <>
-              <select value={compareYear1} onChange={(e) => setCompareYear1(Number(e.target.value))} className="input-field w-auto">
-                {(availableYears.length > 0 ? availableYears : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)).map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <span className="text-gray-500">vs</span>
-              <select value={compareYear2} onChange={(e) => setCompareYear2(Number(e.target.value))} className="input-field w-auto">
-                {(availableYears.length > 0 ? availableYears : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)).map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <button type="button" onClick={loadCompareYears} disabled={compareYear1 === compareYear2 || groups.length === 0 || dataLoading} className="btn-primary">
+              <div className="relative">
+                <button type="button" onClick={() => setShowCompareYearsDropdown(!showCompareYearsDropdown)} className="input-field w-auto min-w-[180px] text-left flex items-center justify-between gap-2">
+                  <span>{selectedCompareYears.length === 0 ? 'Yılları seçin...' : `${selectedCompareYears.length} yıl seçildi (${[...selectedCompareYears].sort((a,b)=>a-b).join(', ')})`}</span>
+                  <span className="text-gray-500">▼</span>
+                </button>
+                {showCompareYearsDropdown && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowCompareYearsDropdown(false)} />
+                    <div className="absolute left-0 top-full mt-1 z-20 bg-gray-800 border border-gray-600 rounded-lg shadow-xl max-h-60 overflow-y-auto min-w-[200px] py-2">
+                      {(availableYears.length > 0 ? availableYears : Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)).map((y) => {
+                        const checked = selectedCompareYears.includes(y)
+                        return (
+                          <label key={y} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-700 cursor-pointer">
+                            <input type="checkbox" checked={checked} onChange={() => setSelectedCompareYears(prev => prev.includes(y) ? prev.filter(yr => yr !== y) : [...prev, y].sort((a, b) => a - b))} className="rounded border-gray-600" />
+                            <span className="text-white">{y}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button type="button" onClick={loadCompareYears} disabled={selectedCompareYears.length === 0 || groups.length === 0 || dataLoading} className="btn-primary">
                 {dataLoading ? 'Yükleniyor...' : 'Karşılaştırmayı Yükle'}
               </button>
             </>
